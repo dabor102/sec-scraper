@@ -1,271 +1,137 @@
-<p align="center">&nbsp;</p>
-<p align="center">
-  <h1 align="center"><b>sec-parser</b></h1>
-</p>
+Of course! Here is a professional README.md file for your GitHub repository based on the provided script.
 
-<p align="left">
-  <!-- Using &nbsp; for alignment due to GitHub README limitations -->
-  <b>Essentials ➔&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b>
-  <a href='https://sec-parser.readthedocs.io/en/latest/?badge=latest'><img src='https://readthedocs.org/projects/sec-parser/badge/?version=latest' alt='Documentation Status' /></a>
-  <a href="LICENSE"><img alt="PyPI - License" src="https://img.shields.io/pypi/l/sec-parser?color=success"></a>
-  <a href="https://project-types.github.io/#federation"><img src="https://img.shields.io/badge/project%20type-federation-brightgreen" alt="Project Type: Federation"></a>
-  <!-- NOTE: After changing stability level here, also change it in pyproject.toml -->
-  <a href="https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#beta"><img src="https://img.shields.io/badge/stability-beta-33bbff.svg" alt="Beta"></a>
-  <br>
-  <b>Health ➔&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b>
-  <a href="https://github.com/alphanome-ai/sec-parser/actions/workflows/ci.yml"><img alt="GitHub Workflow Status: ci.yml" src="https://img.shields.io/github/actions/workflow/status/alphanome-ai/sec-parser/ci.yml?label=ci"></a>
-  <a href="https://github.com/alphanome-ai/sec-parser/actions/workflows/cd.yml"><img alt="GitHub Workflow Status: cd.yml" src="https://img.shields.io/github/actions/workflow/status/alphanome-ai/sec-parser/cd.yml?label=cd"></a>
-  <a href="https://github.com/alphanome-ai/sec-parser/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/alphanome-ai/sec-parser"></a>  
-  <br>
-  <b>Quality ➔&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b>
-  <a href="https://app.codacy.com/gh/alphanome-ai/sec-parser/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade"><img alt="Codacy grade" src="https://img.shields.io/codacy/grade/8b7cb199e0954f2a892f80a3ce81fe42"></a>
-  <a href="https://codecov.io/gh/alphanome-ai/sec-parser"><img src="https://codecov.io/gh/alphanome-ai/sec-parser/graph/badge.svg?token=KJLA96CBCN" alt="codecov" /></a>
-  <a href="https://mypy-lang.org/"><img src="https://img.shields.io/badge/type%20checked-mypy-success.svg"></a>
-  <a href="https://github.com/psf/black"><img alt="Code Style: Black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
-  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
-  <br>
-  <b>Distribution ➔&nbsp;&nbsp;&nbsp;</b>
-  <a href="https://badge.fury.io/py/sec-parser"><img src="https://badge.fury.io/py/sec-parser.svg" alt="PyPI version" /></a>
-  <a href="https://pypi.org/project/sec-parser/"><img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/sec-parser"></a>
-  <a href="https://pypistats.org/packages/sec-parser"><img src="https://img.shields.io/pypi/dm/sec-parser?color=success" alt="PyPI downloads"></a>
-  <br>
-  <b>Community ➔&nbsp;&nbsp;&nbsp;&nbsp;</b>
-  <a href="https://discord.gg/2MC3uJhBxs"><img alt="Discord" src="https://img.shields.io/discord/1164249739836018698?logo=discord&logoColor=white&style=flat"></a>
-  <a href="https://twitter.com/alphanomeai"><img alt="X (formerly Twitter) Follow" src="https://img.shields.io/twitter/follow/alphanomeai"></a>
-  <a href="https://github.com/alphanome-ai/sec-parser"><img src="https://img.shields.io/github/stars/alphanome-ai/sec-parser.svg?style=social&label=Star us on GitHub!" alt="GitHub stars"></a>
-</p>
+Advanced SEC Financial Statement Scraper
+An advanced Python-based web scraper designed to extract financial data from SEC 10-K and 10-Q filings. This tool leverages semantic parsing to intelligently locate and interpret financial statements, overcoming the challenges of inconsistent HTML structures in Edgar filings.
 
-<div align="left">
-  Parse SEC EDGAR HTML documents into a tree of elements that correspond to the visual structure of the document.
-</div>
-<br>
-<div align="center">
-  <b>
-  <a href="https://parser.alphanome.app">See Demo</a> |
-  <a href="https://sec-parser.rtfd.io">Read Docs</a> |
-  <a href="https://github.com/orgs/alphanome-ai/discussions">Join Discussions</a> |
-  <a href="https://discord.gg/2MC3uJhBxs">Join Discord</a>
-  </b>
-</div>
-<br>
+📋 Table of Contents
+Key Features
 
-# Overview
+How It Works
 
-The `sec-parser` project simplifies extracting meaningful information from SEC EDGAR HTML documents by organizing them into semantic elements and a tree structure. Semantic elements might include section titles, paragraphs, and tables, each classified for easier data manipulation. This forms a semantic tree that corresponds to the visual and informational structure of the document. If you're familiar with the <a href="https://www.google.com/search?tbm=isch&q=image+semantic+segmentation" target="_blank">Image Semantic Segmentation</a> concept, it's the same but applied to HTML documents.
+Installation
 
-<div align="center">
-  <img src="https://raw.githubusercontent.com/alphanome-ai/sec-parser/main/docs/semantic_segmentation.png" width="300">
-</div>
+Usage
 
-This tool is especially beneficial for Artificial Intelligence (AI), Machine Learning (ML), and Large Language Models (LLM) applications by streamlining data pre-processing and feature extraction.
+Output Format
 
-- Explore the [**Demo**](https://parser.alphanome.app)
-- Read the [**Documentation**](https://sec-parser.rtfd.io)
-- Join the [**Discussions**](https://github.com/orgs/alphanome-ai/discussions) to get help, propose ideas, or chat with the community
-- Become part of our [**Discord**](https://discord.gg/2MC3uJhBxs) community
-- Report bugs in [**Issues**](https://github.com/alphanome-ai/sec-parser/issues)
-- Stay updated and contribute to our project's direction in [**Announcements**](https://github.com/orgs/alphanome-ai/discussions/categories/announcements) and [**Roadmap**](https://github.com/orgs/alphanome-ai/discussions/categories/roadmap-future-plans)
-- Learn How to [**Contribute**](https://github.com/alphanome-ai/sec-parser/blob/main/CONTRIBUTING.md)
+Debugging
 
-# Key Use-Cases
+Dependencies
 
-`sec-parser` is versatile and can be applied in various scenarios, including but not limited to:
+Disclaimer
 
-#### Financial and Regulatory Analysis
+✨ Key Features
+Semantic Parsing: Uses the sec-parser library to understand the document structure, identifying titles, sections, and tables based on their semantic role rather than just HTML tags.
 
-- Financial Analysis: Extract financial data from 10-Q and 10-K filings for quantitative modeling.
-- Risk Assessment: Evaluate risk factors or Management's Discussion and Analysis sections for qualitative analysis.
-- Regulatory Compliance: Assist in automating compliance checks for the legal teams.
-- Flexible Filtering: Easily filter SEC documents by sections and types, giving you precisely the data you need.
+Intelligent Table Detection: Accurately finds the main financial statements (Income Statement, Balance Sheet, Cash Flow Statement, etc.) by scoring potential titles against a set of keywords and penalties.
 
-#### Analytics and Data Science
+Robust Header Parsing: Deciphers complex, multi-row table headers to correctly identify financial periods (e.g., "Q3 2024", "FY 2023"). It can handle horizontal, vertical, split, and broadcast layouts.
 
-- Academic Research: Facilitate large-scale studies involving public financial disclosures, sentiment analysis, or corporate governance exploratory.
-- Analytics Ready: Integrate parsed data seamlessly into popular analytics tools for further analysis and visualization.
+Dynamic Fiscal Calendar: Automatically generates a company's fiscal quarter mapping (Q1-Q4) based on its reported fiscal year-end, ensuring correct period labeling.
 
-#### AI and Machine Learning
+Automatic Data Normalization: Cleans and parses numeric values, handling various accounting formats like parentheses for negative numbers (1,234) and removing currency symbols.
 
-- Cutting-Edge AI for SEC EDGAR: Apply advanced AI techniques like MemWalker to navigate and extract and transform complex information from SEC documents efficiently. Learn more in our blog post: [Cutting-Edge AI for SEC EDGAR: Introducing MemWalker](https://github.com/orgs/alphanome-ai/discussions/18).
-- AI Applications: Leverage parsed data for various AI tasks such as text summarization, sentiment analysis, and named entity recognition.
-- Data Augmentation: Use authentic financial text to train and test machine learning models.
+Smart Debugging: If data extraction fails for a filing, the script automatically saves the document's semantic tree to a .csv file for easy troubleshooting.
 
-#### Causal AI
+Comprehensive Logging: Provides clear console output for progress tracking and writes a detailed scraper_debug.log file for in-depth analysis.
 
-- Causal Analysis: Use parsed data to understand cause-effect relationships in financial data, beyond mere correlations.
-- Predictive Modeling: Enhance predictive models by incorporating causal relationships, leading to more robust and reliable predictions.
-- Decision Making: Aid decision-making processes by providing insights into the potential impact of different actions, based on causal relationships identified in the data.
+⚙️ How It Works
+The scraper follows a multi-step process to ensure accurate data extraction:
 
-#### Large Language Models
+Fetch Filings: It first queries the SEC EDGAR database to get a list of all 10-K or 10-Q filings for a given stock ticker. It also retrieves the company's fiscal year-end to build a fiscal calendar.
 
-- LLM Compatible: Use parsed data to facilitate complex NLU tasks with Large Language Models like ChatGPT, including question-answering, language translation, and information retrieval.
+Semantic Analysis: For a given filing, the HTML content is parsed into a semantic tree. Each element (e.g., a paragraph, a table) is classified by its function within the document.
 
-These use-cases demonstrate the flexibility and power of `sec-parser` in handling both traditional data extraction tasks and facilitating more advanced AI-driven analysis.
+Locate "Item 8": For 10-K reports, the scraper specifically looks for "Item 8. Financial Statements and Supplementary Data" to narrow its search to the correct part of the document.
 
-# Disclaimer
+Identify Statement Titles: It searches the semantic tree for titles that match keywords for the desired financial statements (e.g., "Consolidated Balance Sheets").
 
-> [!IMPORTANT]
-> This project, `sec-parser`, is an independent, open-source initiative and has no affiliation, endorsement, or verification by the United States Securities and Exchange Commission (SEC). It utilizes public APIs and data provided by the SEC solely for research, informational, and educational objectives. This tool is not intended for financial advisement or as a substitute for professional investment advice or compliance with securities regulations. The creators and maintainers make no warranties, expressed or implied, about the accuracy, completeness, or reliability of the data and analyses presented. Use this software at your own risk. For accurate and comprehensive financial analysis, consult with qualified financial professionals and comply with all relevant legal requirements. The project maintainers and contributors are not liable for any financial or legal consequences arising from the use of this tool.
+Find the Data Table: Once a high-confidence title is found in the HTML, the scraper locates the first valid data table that follows it.
 
-# Getting Started
+Parse and Extract: The table is converted into a grid. The header rows are analyzed to determine the financial periods for each column. The script then iterates through the body rows, extracting the metric name and its corresponding values for each period.
 
-This guide will walk you through the process of installing the `sec-parser` package and using it to extract the "Segment Operating Performance" section as a semantic tree from the latest Apple 10-Q filing.
+Aggregate and Save: The extracted data is compiled, cleaned, and saved to a final CSV file.
 
-> [!TIP]
-> To run the example code in a ready-to-code environment, you can use GitHub Codespaces. Click the button below to open the example code below in a codespace and start experimenting with `sec-parser`:
+🚀 Installation
+Clone the repository:
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/alphanome-ai/sec-parser?devcontainer_path=.devcontainer/devcontainer.json)
+Bash
+git clone https://github.com/your-username/your-repo-name.git
+cd your-repo-name
+Create a virtual environment (recommended):
 
-## Installation
+Bash
+python -m venv venv
+source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+Install the required dependencies:
+The script relies on a few key libraries. You can install them all with pip:
 
-First, install the `sec-parser` package using pip:
+Bash
+pip install pandas requests beautifulsoup4 python-dateutil sec-parser
+💻 Usage
+The script runs interactively from the command line.
 
-```bash
-pip install sec-parser
-```
+Run the script:
 
-To run the example code in this README, you'll also need the `sec_downloader` package:
+Bash
+python advanced_sec_scraper.py
+Enter the stock ticker when prompted (e.g., MSFT, GOOGL).
 
-```bash
-pip install sec-downloader
-```
+Enter the report type (10-Q or 10-K).
 
-## Usage
+The scraper will then process the most recent filing of the selected type. Upon completion, it will print a sample of the data and save the full results to a CSV file.
 
-Once you've installed the necessary packages, you can start by downloading the filing from the SEC EDGAR website. Here's how you can do it:
+Example Session:
 
-```python
-from sec_downloader import Downloader
+$ python advanced_sec_scraper.py
+================================================================================
+SEC Financial Scraper - Simplified Edition
+================================================================================
 
-# Initialize the downloader with your company name and email
-dl = Downloader("MyCompanyName", "email@example.com")
+Enter a stock ticker (e.g., AAPL, MSFT): AAPL
+Enter report type ('10-Q' or '10-K'): 10-K
 
-# Download the latest 10-Q filing for Apple
-html = dl.get_filing_html(ticker="AAPL", form="10-Q")
-```
-
-> [!NOTE]
-> The company name and email address are used to form a user-agent string that adheres to the SEC EDGAR's fair access policy for programmatic downloading. [Source](https://www.sec.gov/os/webmaster-faq#code-support)
-
-> [!TIP]
-> Read [sec-downloader documentation](https://github.com/Elijas/sec-downloader) (and [examples](https://discord.com/channels/1164249739836018698/1247302201836175401/1247655286102298757)) for more advanced usage (such as downloading three latest Apple 10-Q filings instead of just one, or downloading based on a specific CIK or Filing ID (i.e. accession number)). 
-
-Now, we can parse the filing HTML into a list of semantic elements:
-
-```python
-# Utility function to make the example code a bit more compact
-def print_first_n_lines(text: str, *, n: int):
-    print("\n".join(text.split("\n")[:n]), "...", sep="\n")
-```
-
-```python
-import sec_parser as sp
-
-elements: list = sp.Edgar10QParser().parse(html)
-
-demo_output: str = sp.render(elements)
-print_first_n_lines(demo_output, n=7)
-```
-
-<pre>
-<b><font color="navy">TopSectionTitle:</font></b> PART I  —  FINANCIAL INFORMATION
-<b><font color="navy">TopSectionTitle:</font></b> Item 1.    Financial Statements
-<b><font color="navy">TitleElement:</font></b> CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS (Unaudited)
-<b><font color="navy">SupplementaryText:</font></b> (In millions, except number of ...housands and per share amounts)
-<b><font color="navy">TableElement:</font></b> Table with 24 rows, 80 numbers, and 1058 characters.
-<b><font color="navy">SupplementaryText:</font></b> See accompanying Notes to Conde...solidated Financial Statements.
-<b><font color="navy">TitleElement:</font></b> CONDENSED CONSOLIDATED STATEMEN...OMPREHENSIVE INCOME (Unaudited)
+INFO: Fetching submissions from https://data.sec.gov/submissions/CIK0000320193.json
 ...
-</pre>
+INFO: SUCCESS! Extracted 543 unique data points
+INFO: Saved to: 'AAPL_financials_20251006.csv'
+================================================================================
 
+--- Sample of Extracted Data ---
+  Filing Date Report Period End Date                                                URL Financial Section                      Section                      Metric Period    Value Currency     Units
+0  2024-10-28             2024-09-28  https://www.sec.gov/Archives/edgar/data/00003...  Income Statement  Net sales                      Net sales FY 2024  383285.0     USD  millions
+1  2024-10-28             2024-09-28  https://www.sec.gov/Archives/edgar/data/00003...  Income Statement  Net sales                      Net sales FY 2023  394328.0     USD  millions
+📊 Output Format
+The output is a CSV file named {TICKER}_financials_{YYYYMMDD}.csv. The columns are:
 
-> [!TIP]
->
-> **FAQ: How do I get the text of each element (or all of the document)? How do I get all of the text in a specific section?**
-> 
-> Use the `element.text` field. Check out [this notebook](https://github.com/Elijas/sec-parser-exploration/blob/main/00_mdna.ipynb) for a full example.
+Column	Description
+Filing Date	The date the report was filed with the SEC.
+Report Period End Date	The end date of the financial period covered by the report.
+URL	The direct URL to the SEC filing document.
+Financial Section	The name of the financial statement (e.g., Balance Sheet).
+Section	The subsection within the statement (e.g., Current Assets).
+Metric	The specific line item (e.g., Cash and cash equivalents).
+Period	The financial period for the value (e.g., Q3 2024, FY 2023).
+Value	The numeric value of the metric.
+Currency	The currency of the value (e.g., USD).
+Units	The units of the value (e.g., millions, thousands).
+🐛 Debugging
+The script is designed to make debugging easier:
 
-We can also construct a semantic tree to allow for easy filtering by parent sections:
+Log File: A detailed log of operations, including warnings and errors, is saved to scraper_debug.log. This is the first place to look if you encounter issues.
 
-```python
-tree = sp.TreeBuilder().build(elements)
+Semantic Tree Dump: If the scraper runs but fails to extract any data from a filing (e.g., it cannot find "Item 8" or any financial tables), it will automatically export the document's semantic tree structure to a file named {TICKER}_semantic_tree.csv. This file shows how the scraper interpreted the document's structure and is invaluable for understanding why a particular table was not found.
 
-demo_output: str = sp.render(tree)
-print_first_n_lines(demo_output, n=7)
-```
+📦 Dependencies
+pandas
 
-<pre>
-<b><font color="navy">TopSectionTitle:</font></b> PART I  —  FINANCIAL INFORMATION
-├── <b><font color="navy">TopSectionTitle:</font></b> Item 1.    Financial Statements
-│   ├── <b><font color="navy">TitleElement:</font></b> CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS (Unaudited)
-│   │   ├── <b><font color="navy">SupplementaryText:</font></b> (In millions, except number of ...housands and per share amounts)
-│   │   ├── <b><font color="navy">TableElement:</font></b> Table with 24 rows, 80 numbers, and 1058 characters.
-│   │   ├── <b><font color="navy">SupplementaryText:</font></b> See accompanying Notes to Conde...solidated Financial Statements.
-│   ├── <b><font color="navy">TitleElement:</font></b> CONDENSED CONSOLIDATED STATEMEN...OMPREHENSIVE INCOME (Unaudited)
-...
-</pre>
+requests
 
-> [!TIP]
->
-> Feel free to experiment with the example code provided above. You can easily do this by launching a GitHub Codespace for the `sec-parser` repository, which will set up a development environment for you in the cloud:
->
-> [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?machine_type=standardLinux32Gb&repo=alphanome-ai/sec-parser)
->
-> This is a great way to play around with the code without having to set up anything on your local machine. Give it a try!
+Beautiful Soup
 
-For more examples and advanced usage, you can continue learning how to use `sec-parser` by referring to the [**User Guide**](https://sec-parser.readthedocs.io/en/latest/notebooks/user_guide.html), [**Developer Guide**](https://sec-parser.readthedocs.io/en/latest/notebooks/developer_guide.html), and [**Documentation**](https://sec-parser.rtfd.io).
+python-dateutil
 
-## This was an example of 10-Q SEC Form parsing. How do we parse other SEC Form types, such as 10-K, 8-K, S-1, etc.?
+sec-parser
 
-Please refer to [this document](https://github.com/Elijas/sec-parser-exploration/blob/main/02_other_sec_form_types.ipynb).
-
-## What's Next?
-
-Your turn to explore the capabilities of `sec-parser`! With the tools and examples provided, you can now dive into parsing and analyzing SEC filings.
-
-The semantic elements and tree structures created by the parser will serve as a solid foundation for your financial analysis and research tasks with the tools of your choice.
-
-For a tailored experience, consider using our free and open-source library for AI-powered financial analysis:
-
-```bash
-pip install sec-ai
-```
-
-[**Explore `sec-ai` on GitHub**](https://github.com/alphanome-ai/sec-ai)
-
-# Best Practices
-
-## How to Import Modules In Your Code
-
-To ensure your code remains functional even when we change the internal structure of `sec-parser`, it's recommended to avoid deep imports. Here is an example of a deep import (not recommended):
-
-> [!CAUTION]
-> > `from sec_parser.semantic_tree.internal_utils.core import SomeInternalClass`
-
-Instead, use the suggested ways to import modules from `sec-parser`:
-
-### Root Import (prefix)
-
-- **`import sec_parser as sp`**. This imports the main package as `sp`. You can then access its functionalities using `sp.` prefix.
-
-### Root Import (direct)
-
-- **`from sec_parser import SomeClass`**: This allows you to directly use `SomeClass` without any prefix.
-
-### Submodule Import (prefix)
-
-- **`import sec_parser.semantic_tree`**: This imports the `semantic_tree` submodule, and you can access its classes and functions using `semantic_tree.` prefix.
-
-### Submodule Import (direct)
-
-- **`from sec_parser.semantic_tree import SomeClass`**: This imports a specific class `SomeClass` from the `semantic_tree` submodule.
-
-> [!NOTE]
-> The main package `sec_parser` contains only the most common functionalities. For specialized tasks, please use submodule or submodule-level imports.
-
-# Contributing
-
-For information about setting up the development environment, coding standards, and contribution workflows, please refer to our [CONTRIBUTING.md](https://github.com/alphanome-ai/sec-parser/blob/main/CONTRIBUTING.md) guide.
-
-# License
-
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/alphanome-ai/sec-parser/blob/main/LICENSE) file for details.
+⚠️ Disclaimer
+This tool is intended for educational and research purposes only. The data is retrieved directly from the SEC EDGAR database. Always verify critical financial data with official sources. The user agent in the script ('Your Name your.email@example.com') should be updated to reflect your own information as per the SEC's fair access guidelines.
