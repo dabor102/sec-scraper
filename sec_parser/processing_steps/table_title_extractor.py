@@ -164,13 +164,9 @@ class TableTitleExtractor(AbstractElementwiseProcessingStep):
         all_rows = table.find_all("tr")
         content_rows = [row for row in all_rows if row.get_text(strip=True)]
 
-        # CRITICAL CHECK: Is this a data table?
-        # If yes, don't extract headers - they belong with the data
-        #if self._is_data_table(content_rows):
-       #     return [], None
 
-        # Case 1: Table has only 1-2 rows with text (likely just a title wrapper)
-        if len(content_rows) <= 2:
+        # Table has only 1-2 rows with text (likely just a title wrapper)
+        if len(content_rows) <= 3:
             # Check if it's really just a title (short text, has styling)
             if self._is_single_title_table(content_rows):
                 # Extract all content rows as titles
