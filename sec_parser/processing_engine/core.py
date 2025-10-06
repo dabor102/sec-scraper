@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Callable
 
+from sec_parser.processing_steps.table_title_extractor import TableTitleExtractor
+
 from sec_parser.processing_engine.html_tag_parser import (
     AbstractHtmlTagParser,
     HtmlTagParser,
@@ -183,6 +185,7 @@ class Edgar10QParser(AbstractSemanticElementParser):
             ),
             ImageClassifier(types_to_process={NotYetClassifiedElement}),
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
+            TableTitleExtractor(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10Q(types_to_process={NotYetClassifiedElement}),
@@ -228,6 +231,7 @@ class Edgar10KParser(AbstractSemanticElementParser):
             ),
             ImageClassifier(types_to_process={NotYetClassifiedElement}),
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
+            TableTitleExtractor(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10K(types_to_process={NotYetClassifiedElement}),

@@ -64,6 +64,7 @@ __all__ = [
     "PageNumberClassifier",
     "SupplementaryTextClassifier",
     "TableCheck",
+    "TableTitleExtractor",
     "TableClassifier",
     "TableOfContentsClassifier",
     "TextClassifier",
