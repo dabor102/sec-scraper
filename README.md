@@ -1,24 +1,12 @@
-Of course! Here is a professional README.md file for your GitHub repository based on the provided script.
-
-Advanced SEC Financial Statement Scraper
-An advanced Python-based web scraper designed to extract financial data from SEC 10-K and 10-Q filings. This tool leverages semantic parsing to intelligently locate and interpret financial statements, overcoming the challenges of inconsistent HTML structures in Edgar filings.
-
 📋 Table of Contents
-Key Features
-
-How It Works
-
-Installation
-
-Usage
-
-Output Format
-
-Debugging
-
-Dependencies
-
-Disclaimer
++ Key Features
++ How It Works
++ Installation
++ Usage
++ Output Format
++ Debugging
++ Dependencies
++ Disclaimer
 
 ✨ Key Features
 Semantic Parsing: Uses the sec-parser library to understand the document structure, identifying titles, sections, and tables based on their semantic role rather than just HTML tags.
