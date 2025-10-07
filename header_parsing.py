@@ -45,7 +45,7 @@ def is_header_row(text: str, context: ElementProcessingContext) -> bool:
                 parse_date(substring)
                 # If it succeeds without error, we've found a date
                 return True
-            except (ParserError, ValueError):
+            except (ParserError, ValueError, OverflowError, TypeError):
                 # This substring is not a date, so we continue
                 pass
 

@@ -161,11 +161,6 @@ def save_semantic_tree_debug(semantic_tree: list, ticker: str, filing_date: str 
             
             debug_records.append(record)
         
-        # Generate filename
-        #timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-        #date_part = f"_{filing_date.replace('-', '')}" if filing_date else ""
-        #reason_part = f"_{reason}" if reason else ""
-        #section_part = f"_{section_name.replace(' ', '_')}" if section_name else ""
         filename = f"{ticker}_semantic_tree.csv"
         
         # Save to CSV
@@ -860,6 +855,88 @@ def _try_vertical_header(header_rows: list[list[str]], metric_col: int,
 # TABLE UTILITIES
 # ============================================================================
 
+def extract_table_from_semantic_node(title_node) -> tuple[Tag, dict] | None:
+    """
+    Extract table directly using semantic tree references.
+    
+    Returns:
+        (bs4_table, metadata) or None
+    """
+    metadata = {
+        'source': None,
+        'title_bs4': None,
+        'is_extracted_title': False,
+        'title_row_index': None,
+    }
+    
+    # Get the actual HTML element from semantic tree
+    title_element = title_node.semantic_element
+    title_bs4 = title_element.html_tag._bs4
+    metadata['title_bs4'] = title_bs4
+    
+    logger.debug(f"Title HTML tag: <{title_bs4.name}>")
+    
+    # STRATEGY 1: Check if title is part of CompositeSemanticElement
+    parent_node = title_node.parent if hasattr(title_node, 'parent') else None
+    
+    if parent_node:
+        from sec_parser.semantic_elements.composite_semantic_element import CompositeSemanticElement
+        
+        if isinstance(parent_node.semantic_element, CompositeSemanticElement):
+            logger.info("Title is in CompositeSemanticElement - looking for TableElement sibling")
+            
+            for sibling_node in parent_node.children:
+                if isinstance(sibling_node.semantic_element, TableElement):
+                    table_bs4 = sibling_node.semantic_element.html_tag._bs4
+                    
+                    # Check if NOT a wrapper (i.e., it IS a data table)
+                    if not _is_title_wrapper_table(table_bs4, title_bs4):
+                        logger.info("✓ Found associated table via CompositeSemanticElement")
+                        metadata['source'] = 'composite'
+                        metadata['is_extracted_title'] = True
+                        return table_bs4, metadata
+                    else:
+                        logger.debug("Sibling table is just a wrapper, not a data table")
+    
+    # STRATEGY 2: Check if title itself is inside a table
+    parent_table = title_bs4.find_parent('table')
+    
+    if parent_table:
+        # Check if NOT a wrapper (i.e., it IS a data table)
+        # Pass title_bs4 so _is_title_wrapper_table knows to check for it
+        if not _is_title_wrapper_table(parent_table, title_bs4):
+            logger.info("✓ Title is inside a data table")
+            
+            # Find which row the title is in
+            title_row = title_bs4.find_parent('tr')
+            if title_row:
+                all_rows = parent_table.find_all('tr')
+                try:
+                    title_row_index = all_rows.index(title_row)
+                    metadata['title_row_index'] = title_row_index
+                    logger.debug(f"Title is in row {title_row_index}")
+                except ValueError:
+                    logger.warning("Could not determine title row index")
+            
+            metadata['source'] = 'parent_table'
+            return parent_table, metadata
+        else:
+            logger.debug("Parent table is just a wrapper, looking for next table")
+            # Fall through to strategy 3
+    
+    # STRATEGY 3: Look for next table after title
+    logger.info("Looking for next table after title element")
+    next_table = find_next_table(title_bs4)
+    
+    if next_table:
+        logger.info("✓ Found next table after title")
+        metadata['source'] = 'next_table'
+        return next_table, metadata
+    
+    logger.warning("Could not find table for title")
+    return None
+
+
 def build_grid_from_table(table: Tag) -> list[list[str]]:
     """Builds accurate 2D list from BeautifulSoup table tag."""
     grid = []
@@ -912,18 +989,24 @@ def build_grid_from_table(table: Tag) -> list[list[str]]:
     return clean_grid
 
 def split_table_into_header_and_body(grid: list[list[str]], 
-                                     metric_col: int) -> tuple[list[list[str]], int]:
+                                     metric_col: int,
+                                     title_row_index: int = None) -> tuple[list[list[str]], int]:
     """
     Splits table grid into header and body sections.
     
-    Improved to detect date patterns and rows with years as headers.
+    Args:
+        grid: 2D list representing the table
+        metric_col: Column index for metric names
+        title_row_index: Optional - if provided, skip this row (it's the title)
+    
+    Returns:
+        (header_rows, body_start_index)
     """
     if not grid:
         return [], 0
 
     header_keywords = {'year', 'ended', 'month', 'quarter', 'period', 'fiscal'}
     
-    # Month names to detect dates
     month_names = {
         'january', 'february', 'march', 'april', 'may', 'june',
         'july', 'august', 'september', 'october', 'november', 'december',
@@ -931,7 +1014,6 @@ def split_table_into_header_and_body(grid: list[list[str]],
         'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
     }
     
-    # Combined pattern for units declarations
     units_pattern = re.compile(
         r'^\s*'
         r'(?:'
@@ -941,10 +1023,14 @@ def split_table_into_header_and_body(grid: list[list[str]],
         re.IGNORECASE
     )
     
-    # Pattern to detect years
     year_pattern = re.compile(r'\b(19|20)\d{2}\b')
 
     for row_idx, row in enumerate(grid):
+        # CRITICAL: Skip the title row if we know where it is
+        if title_row_index is not None and row_idx == title_row_index:
+            logger.debug(f"Skipping row {row_idx} (known title row)")
+            continue
+        
         if row_idx > 15:  # Safety break
             break
         
@@ -956,6 +1042,23 @@ def split_table_into_header_and_body(grid: list[list[str]],
 
         # Empty metric cell is part of header
         if not metric_text:
+            continue
+
+        # Check if this looks like a title row (even if title_row_index not provided)
+        # Title indicators: "consolidated statement", "balance sheet", etc.
+        title_indicators = [
+            'consolidated statement',
+            'balance sheet',
+            'statement of income',
+            'statement of operations',
+            'cash flow',
+            'comprehensive income',
+            'stockholders equity',
+            'shareholders equity'
+        ]
+        
+        if any(indicator in metric_text_lower for indicator in title_indicators):
+            logger.debug(f"Row {row_idx} appears to be title: '{metric_text}'")
             continue
 
         # Date/period keywords indicate header
@@ -973,9 +1076,8 @@ def split_table_into_header_and_body(grid: list[list[str]],
             logger.debug(f"Row {row_idx} identified as header (year): '{metric_text}'")
             continue
         
-        # NEW: Check if metric text is a month name or contains a month
+        # Check if metric text is a month name or contains a month
         if any(month in metric_text_lower for month in month_names):
-            # Additionally check if data cells contain years
             data_cells = row[metric_col + 1:]
             has_years = any(year_pattern.search(cell) for cell in data_cells if cell.strip())
             
@@ -983,19 +1085,15 @@ def split_table_into_header_and_body(grid: list[list[str]],
                 logger.debug(f"Row {row_idx} identified as header (date with years): '{metric_text}'")
                 continue
             else:
-                # Month name but no years in data cells - might be actual data
-                # Check if it looks like a complete date (e.g., "June 30, 2025")
                 if year_pattern.search(metric_text):
                     logger.debug(f"Row {row_idx} identified as header (complete date): '{metric_text}'")
                     continue
         
-        # NEW: Check if this row has only years in data columns (common header pattern)
-        # Pattern: metric column has some text, data columns have only years
+        # Check if this row has only years in data columns
         data_cells = row[metric_col + 1:]
         non_empty_data_cells = [cell.strip() for cell in data_cells if cell.strip()]
         
         if non_empty_data_cells:
-            # Check if ALL non-empty data cells are just years
             all_years = all(year_only_pattern.match(cell) for cell in non_empty_data_cells)
             
             if all_years:
@@ -1455,7 +1553,6 @@ def find_text_in_html(soup: BeautifulSoup, target_text: str) -> Tag | None:
     logger.warning(f"Could not find element for: '{target_text}'")
     return None
 
-
 def find_next_table(element: Tag) -> Tag | None:
     """Find next data table after given element, skipping title wrapper tables."""
     if not element:
@@ -1488,16 +1585,31 @@ def find_next_table(element: Tag) -> Tag | None:
     return None
 
 
-def _is_title_wrapper_table(table: Tag) -> bool:
+def _is_title_wrapper_table(table: Tag, title_element: Tag = None) -> bool:
     """
     Detect if a table is just a styling wrapper for a title.
     
-    Indicators:
+    Args:
+        table: The table to check
+        title_element: Optional - if provided and is a <td>/<th> in this table,
+                      this is DEFINITELY NOT a wrapper (it's a data table with title inside)
+    
+    Indicators of wrapper tables:
     - Few rows (typically 1-3)
     - Mostly empty cells
     - Only text content is a title (no numbers)
     - Large colspan usage
+    
+    Returns:
+        True if this is a title wrapper, False if it's a data table
     """
+    # CRITICAL: If title_element is a <td>/<th> in THIS table,
+    # then this is NOT a wrapper - it's a data table with the title inside
+    if title_element and title_element.name in ['td', 'th']:
+        if title_element.find_parent('table') == table:
+            logger.info("Title is a cell inside this table - NOT a wrapper")
+            return False
+    
     rows = table.find_all('tr')
     
     # Title wrappers usually have very few rows
@@ -1507,7 +1619,7 @@ def _is_title_wrapper_table(table: Tag) -> bool:
     # Count cells with actual content
     cells_with_content = 0
     total_text = []
-    has_numbers = False
+    #has_numbers = False
     
     for row in rows:
         cells = row.find_all(['td', 'th'])
@@ -1526,11 +1638,9 @@ def _is_title_wrapper_table(table: Tag) -> bool:
         logger.debug(f"Title wrapper check: {cells_with_content} cells, text: '{combined_text[:50]}...'")
         return True
     
-    # Title wrappers don't have numeric data
-    if not has_numbers and cells_with_content < 5:
-        return True
     
     return False
+
 
 
 def score_title(title_text: str, keywords: dict) -> int:
@@ -1562,15 +1672,18 @@ def score_title(title_text: str, keywords: dict) -> int:
     
     return score
 
-
-def find_financial_statement_table(soup: BeautifulSoup, semantic_tree: list,
-                                   section_name: str, context: ScrapingContext,
-                                   processed_tables: set, 
-                                   used_title_texts: set) -> tuple[Tag, Tag, str] | None:
+def find_financial_statement_table(semantic_tree: list, section_name: str,
+                                      context: ScrapingContext,
+                                      processed_tables: set, 
+                                      used_title_texts: set) -> tuple[Tag, str, dict] | None:
     """
-    Main function to find a financial statement table.
+    Find financial statement table using semantic tree directly.
+    No HTML searching needed!
+    
+    Returns:
+        (table_bs4, title_text, metadata) or None
     """
-    logger.info(f"\n--- Finding {section_name} ---")
+    logger.info(f"\n--- Finding {section_name} (Direct Semantic Tree Method) ---")
 
     search_tree = semantic_tree
     
@@ -1580,8 +1693,6 @@ def find_financial_statement_table(soup: BeautifulSoup, semantic_tree: list,
         if item8_index != -1:
             search_tree = semantic_tree[item8_index:]
             logger.info(f"Restricted search to {len(search_tree)} nodes after Item 8")
-        else:
-            logger.warning("Could not find Item 8, searching entire document")
 
     keywords = STATEMENT_KEYWORDS[section_name]
     matching_titles = find_statement_titles(search_tree, keywords)
@@ -1593,75 +1704,83 @@ def find_financial_statement_table(soup: BeautifulSoup, semantic_tree: list,
         logger.warning(f"No new titles found for {section_name}")
         return None
 
-    # Prioritize titles by score
+    # Score and prioritize
     prioritized_titles = sorted(
         unprocessed_titles,
         key=lambda t: score_title(t['text'], keywords),
         reverse=True
     )
-
-    if prioritized_titles:
-        best = prioritized_titles[0]
-        best_score = score_title(best['text'], keywords)
-        logger.info(f"Best candidate: '{best['text']}' (Score: {best_score})")
     
     # Try each candidate
     for title_info in prioritized_titles:
         title_text = title_info['text']
+        title_node = title_info['node']
+        
         logger.info(f"Processing: '{title_text}'")
         
-        title_element = find_text_in_html(soup, title_text)
-        if not title_element:
-            logger.warning(f"Could not locate title in HTML: '{title_text}'")
+        # *** KEY CHANGE: Extract table directly from semantic tree ***
+        result = extract_table_from_semantic_node(title_node)
+        
+        if not result:
+            logger.warning(f"Could not find table for: '{title_text}'")
             continue
         
-        potential_table = find_next_table(title_element)
+        table_bs4, metadata = result
         
-        while potential_table:
-            if potential_table in processed_tables:
-                logger.warning("Table already processed, searching for next")
-                potential_table = potential_table.find_next('table')
-                continue
+        # Check if already processed
+        if table_bs4 in processed_tables:
+            logger.warning("Table already processed, trying next candidate")
+            continue
 
-            rows = len(potential_table.find_all('tr'))
-            
-            # Skip very large tables in 10-K (likely ToC)
-            if context.form_type == '10-K' and rows > 100:
-                logger.warning(f"Skipping very large table ({rows} rows)")
-                potential_table = potential_table.find_next('table')
-                continue
-
-            logger.info(f"Successfully found table for {section_name}")
-            return potential_table, title_element, title_text
+        rows = len(table_bs4.find_all('tr'))
         
-        logger.warning(f"No valid table after title: '{title_text}'")
+        # Skip very large tables in 10-K (likely ToC)
+        if context.form_type == '10-K' and rows > 100:
+            logger.warning(f"Skipping very large table ({rows} rows)")
+            continue
+
+        logger.info(f"✓ Found table for {section_name}")
+        logger.info(f"  Source: {metadata['source']}")
+        logger.info(f"  Extracted title: {metadata['is_extracted_title']}")
+        logger.info(f"  Rows: {rows}")
+        
+        return table_bs4, title_text, metadata
     
     logger.error(f"Could not find table for {section_name}")
     return None
+
 
 
 # ============================================================================
 # DATA EXTRACTION
 # ============================================================================
 
-def extract_data_from_table(table: Tag, title_element: Tag, section_name: str,
-                           filing_info: dict, context: ScrapingContext) -> list:
-    """Extracts financial data from a table."""
+def extract_data_from_table(table: Tag, title_text: str, metadata: dict,
+                           section_name: str, filing_info: dict, 
+                           context: ScrapingContext) -> list:
+    """Extract data from table, skipping title row if it's inside the table."""
     if not table:
         logger.error(f"No table provided for '{section_name}'")
         return []
+    
+    logger.info(f"Extracting data from table (source: {metadata['source']})")
     
     metric_col = context.get_metric_column(section_name)
     is_snapshot = (section_name == 'Balance Sheet')
     
     # Build grid
     grid = build_grid_from_table(table)
-    logger.debug(f"Table grid preview for {section_name}:")
-    for i, row in enumerate(grid[:5]):
-        logger.debug(f"  Row {i}: {row[:5]}...")
+    logger.debug(f"Table grid: {len(grid)} rows x {len(grid[0]) if grid else 0} cols")
     
-    # Split header/body
-    header_section, body_start_row = split_table_into_header_and_body(grid, metric_col)
+    # Split header/body - pass title_row_index if we know it
+    title_row_index = metadata.get('title_row_index')
+    
+    if title_row_index is not None:
+        logger.info(f"Title is in row {title_row_index} of this table - will skip it")
+    
+    header_section, body_start_row = split_table_into_header_and_body(
+        grid, metric_col, title_row_index
+    )
     
     # Parse periods
     periods = []
@@ -1669,14 +1788,19 @@ def extract_data_from_table(table: Tag, title_element: Tag, section_name: str,
         logger.info(f"Parsing header for '{section_name}'")
         periods = parse_header(header_section, metric_col, context, is_snapshot)
     
-    # Fallback: look for text between title and table
-    if not periods and title_element:
-        logger.warning("Header parsing failed, trying text between title and table")
-        text_blob = _find_text_between_elements(title_element, table)
-        if text_blob:
-            periods = _parse_periods_from_text_blob(text_blob, context, is_snapshot)
+    # Fallback strategies...
+    if not periods and metadata.get('is_extracted_title'):
+        logger.warning("Header parsing failed, looking for period info near table")
+        periods = _parse_periods_near_table(table, context, is_snapshot)
     
-    # Apply corrections for non-balance sheet statements
+    if not periods and title_row_index is not None:
+        logger.warning("Header parsing failed, extracting from rows after title")
+        # Try to parse from rows between title and body
+        potential_header = grid[title_row_index + 1:body_start_row]
+        if potential_header:
+            periods = parse_header(potential_header, metric_col, context, is_snapshot)
+    
+    # Apply corrections
     if not is_snapshot and periods:
         periods = correct_fiscal_periods(periods)
     
@@ -1689,7 +1813,7 @@ def extract_data_from_table(table: Tag, title_element: Tag, section_name: str,
     logger.info(f"Detected Periods: {periods}")
     logger.info(f"Detected Units: {currency} in {units}")
 
-    # Extract data
+    # Extract data - same as before
     data_records = []
     current_section_header = ""
     num_periods = len(periods)
@@ -1727,6 +1851,26 @@ def extract_data_from_table(table: Tag, title_element: Tag, section_name: str,
             
     logger.info(f"Extracted {len(data_records)} records from '{section_name}'")
     return data_records
+
+def _parse_periods_near_table(table: Tag, context: ScrapingContext, 
+                              is_snapshot: bool) -> list[str]:
+    """
+    Look for period information in elements immediately before the table.
+    Useful when title was extracted by TableTitleSplitter.
+    """
+    # Look at previous siblings
+    text_parts = []
+    for sibling in table.find_previous_siblings(limit=5):
+        if isinstance(sibling, Tag):
+            text = sibling.get_text(" ", strip=True)
+            if text:
+                text_parts.append(text)
+    
+    if not text_parts:
+        return []
+    
+    combined_text = " ".join(reversed(text_parts))  # Reverse to get chronological order
+    return _parse_periods_from_text_blob(combined_text, context, is_snapshot)
 
 
 def _find_text_between_elements(start_element: Tag, end_element: Tag) -> str:
@@ -1799,13 +1943,13 @@ def _parse_periods_from_text_blob(text: str, context: ScrapingContext,
 # ============================================================================
 
 def process_single_filing(filing_meta: dict, context: ScrapingContext) -> list:
-    """Process one filing document."""
+    """Process one filing document using direct semantic tree access."""
     logger.info(f"\n{'='*80}")
-    logger.info(f"Processing {filing_meta['Filing Date']} "
-               f"(Period: {filing_meta['Report Period End Date']})")
-    logger.info(f"URL: {filing_meta['URL']}")
+    logger.info(f"Processing {filing_meta['Filing Date']}")
+    logger.info(f"URL: {filing_meta['URL']}") 
     logger.info(f"{'='*80}")
 
+    # Get HTML and build semantic tree
     soup = get_soup(filing_meta['URL'])
     if not soup:
         return []
@@ -1821,23 +1965,8 @@ def process_single_filing(filing_meta: dict, context: ScrapingContext) -> list:
     processed_tables = set()
     used_title_texts = set()
     
-    # Track if Item 8 was found (for 10-K)
-    item8_found = True
-    if context.form_type == '10-K':
-        item8_index, _ = find_item8_node(semantic_tree)
-        if item8_index == -1:
-            item8_found = False
-            logger.warning("Item 8 not found - saving semantic tree for debugging")
-            save_semantic_tree_debug(
-                semantic_tree,
-                context.ticker,
-                filing_meta['Filing Date'],
-                reason='no_item8'
-            )
-
-    # Process each target section
+    # Target sections
     target_sections = [
-        
         'Income Statement',
         'Balance Sheet',
         'Cash Flow Statement',
@@ -1845,70 +1974,46 @@ def process_single_filing(filing_meta: dict, context: ScrapingContext) -> list:
         'Stockholders Equity'
     ]
 
-    sections_found = {}
-    
     try:
         for section_name in target_sections:
             logger.info(f"\n--- Searching for: {section_name} ---")
 
-            found_item = find_financial_statement_table(
-                soup, semantic_tree, section_name, context,
+            # *** KEY CHANGE: Use semantic tree directly, no soup needed! ***
+            result = find_financial_statement_table(
+                semantic_tree, section_name, context,
                 processed_tables, used_title_texts
             )
             
-            if not found_item:
+            if not result:
                 logger.error(f"Could not find table for '{section_name}'")
-                sections_found[section_name] = False
                 continue
             
-            sections_found[section_name] = True
-            table, title_element, found_title_text = found_item
-            processed_tables.add(table)
-            used_title_texts.add(found_title_text)
+            table_bs4, title_text, metadata = result
+            processed_tables.add(table_bs4)
+            used_title_texts.add(title_text)
 
+            # Extract data - pass metadata for context
             records = extract_data_from_table(
-                table, title_element, section_name, filing_meta, context
+                table_bs4, title_text, metadata,
+                section_name, filing_meta, context
             )
 
             if records:
                 filing_data.extend(records)
-                logger.info(f"Extracted {len(records)} records for '{section_name}'")
+                logger.info(f"✓ Extracted {len(records)} records for '{section_name}'")
             else:
                 logger.warning(f"No data extracted for '{section_name}'")
     
     except Exception as e:
         logger.error(f"Error processing filing: {e}")
         logger.debug(traceback.format_exc())
-        
-        # Save semantic tree for debugging
-        save_semantic_tree_debug(
-            semantic_tree, 
-            context.ticker, 
-            filing_meta['Filing Date'],
-            reason='exception'
-        )
-        
-        # Continue with partial data
-        logger.warning("Continuing with partial data after error")
+        save_semantic_tree_debug(semantic_tree, context.ticker, 
+                                filing_meta['Filing Date'], reason='exception')
     
-    # Check if we got any data
     if not filing_data:
-        logger.warning("No data extracted from any section - saving semantic tree for debugging")
-        
-        # Determine most specific reason
-        if not any(sections_found.values()):
-            reason = 'no_sections_found'
-        elif not item8_found:
-            reason = 'no_item8_no_data'
-        else:
-            reason = 'no_data_extracted'
-        
-        save_semantic_tree_debug(
-            semantic_tree,
-            context.ticker,
-            filing_meta['Filing Date'],
-            reason=reason
-        )
+        logger.warning("No data extracted - saving debug info")
+        save_semantic_tree_debug(semantic_tree, context.ticker,
+                                filing_meta['Filing Date'], reason='no_data')
     
     return filing_data
 

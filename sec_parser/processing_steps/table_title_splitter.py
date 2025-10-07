@@ -24,6 +24,8 @@ from sec_parser.semantic_elements.composite_semantic_element import (
 from sec_parser.semantic_elements.table_element.table_element import TableElement
 from sec_parser.semantic_elements.title_element import TitleElement
 
+from header_parsing import is_header_row
+
 if TYPE_CHECKING:  # pragma: no cover
     from sec_parser.semantic_elements.abstract_semantic_element import (
         AbstractSemanticElement,
@@ -154,29 +156,29 @@ class TableTitleSplitter(AbstractElementwiseProcessingStep):
         )
 
     def _identify_title_rows(self, rows: list[bs4.Tag]) -> list[int]:
-        """
-        Identify which rows are title rows based on styling and structure.
-        
-        Args:
-            rows: List of table row tags
-            
-        Returns:
-            List of row indices that appear to be titles
-        """
         title_indices = []
-
-        # Only check the first few rows
         rows_to_check = min(len(rows), self._max_title_rows)
+        found_first_title = False
 
         for idx in range(rows_to_check):
             row = rows[idx]
+            
+            # Check if row is empty (just spacing)
+            if not row.get_text(strip=True):
+                if not found_first_title:
+                    continue  # Skip initial empty rows
+                else:
+                    break  # Stop after titles if we hit empty row
+            
             if self._is_title_row(row, idx, rows):
                 title_indices.append(idx)
-            else:
-                # Stop at first non-title row to keep titles contiguous
+                found_first_title = True
+            elif found_first_title:
+                # Stop after finding titles
                 break
-
+        
         return title_indices
+
 
     def _is_title_row(
         self,
@@ -200,6 +202,9 @@ class TableTitleSplitter(AbstractElementwiseProcessingStep):
             return False
 
         text = row.get_text(strip=True)
+
+        if is_header_row(text, context=None):
+            return False  # ← This prevents extracting "2024, 2023, 2022" as title
 
         # Criterion 1: Contains substantial text (not just numbers/symbols)
         has_words = any(c.isalpha() for c in text) and len(text) > 3
