@@ -33,7 +33,7 @@ class TableClassifier(AbstractElementwiseProcessingStep):
             types_to_exclude=types_to_exclude,
         )
         self._row_count_threshold = 1
-
+        
     def _process_element(
         self,
         element: AbstractSemanticElement,
@@ -47,7 +47,7 @@ class TableClassifier(AbstractElementwiseProcessingStep):
                     message=("Skipping: Failed to get table metrics."),
                 )
                 return element
-            if metrics.rows > self._row_count_threshold:
+            if metrics.rows >= self._row_count_threshold:  # Changed from > to >=
                 return TableElement.create_from_element(
                     element,
                     log_origin=self.__class__.__name__,
@@ -55,7 +55,7 @@ class TableClassifier(AbstractElementwiseProcessingStep):
             element.processing_log.add_item(
                 log_origin=self.__class__.__name__,
                 message=(
-                    f"Skipping: Table has {metrics.rows} rows, which is below the "
+                    f"Skipping: Table has {metrics.rows} rows, which is below or equal to the "
                     f"threshold of {self._row_count_threshold}."
                 ),
             )
