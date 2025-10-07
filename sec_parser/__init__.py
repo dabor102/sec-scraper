@@ -57,6 +57,7 @@ __all__ = [
     "SecParserError",
     "SecParserRuntimeError",
     "SecParserValueError",
+    "DocumentStyleAnalyzer",
     # Common types
     "AbstractNestingRule",
     "AbstractProcessingStep",

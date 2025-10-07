@@ -51,123 +51,14 @@ class TableTitleExtractor(AbstractElementwiseProcessingStep):
         if not isinstance(element, TableElement):
             return element
 
-        title_rows, remaining_table = self._extract_title_rows(element.html_tag)
-
-        if not title_rows:
-            return element
-
-        # Create new elements for the extracted titles and remaining table
-        new_elements = []
-
-        for title_row in title_rows:
-            title_element = TitleElement(
-                title_row,
-                processing_log=element.processing_log.copy(),
-                log_origin=self.__class__.__name__,
-            )
-            title_element.processing_log.add_item(
-                message="Extracted as title row from table",
-                log_origin=self.__class__.__name__,
-            )
-            new_elements.append(title_element)
-
-        # Add remaining table if it has content
-        if remaining_table and self._has_meaningful_content(remaining_table):
-            table_element = NotYetClassifiedElement(
-                remaining_table,
-                processing_log=element.processing_log.copy(),
-                log_origin=self.__class__.__name__,
-            )
-            new_elements.append(table_element)
-
-        # Return composite element containing both title and table
-        return CompositeSemanticElement.create_from_element(
-            element,
-            log_origin=self.__class__.__name__,
-            inner_elements=new_elements,
-        )
-    
-    
-    def _extract_title_rows(
-        self,
-        html_tag: HtmlTag
-    ) -> tuple[list[HtmlTag], HtmlTag | None]:
-        """
-        Extract rows that look like titles from a table.
-
-        Strategy: Identify tables/rows used purely for title styling.
-        Only extract from title wrapper tables, NOT from data tables.
-
-        Args:
-            html_tag: The HTML tag to analyze
-
-        Returns:
-            tuple: (list of title HtmlTags, remaining table HtmlTag or None)
-        """
-        bs4_tag = html_tag._bs4  # Access underlying bs4 tag
-
-        if bs4_tag.name != "table":
-            table = bs4_tag.find("table")
-            if not table:
-                return [], None
-        else:
-            table = bs4_tag
-
-        # Get all rows with text content
-        all_rows = table.find_all("tr")
-        content_rows = [row for row in all_rows if row.get_text(strip=True)]
-
-
-        # Table has only 1-2 rows with text (likely just a title wrapper)
-        if len(content_rows) <= 3:
-            # Check if it's really just a title (short text, has styling)
-            if self._is_single_title_table(content_rows):
-                # Extract all content rows as titles
-                title_rows = []
-                for row in content_rows:
-                    content = self._extract_title_content(row)
-                    if content:
-                        title_rows.append(HtmlTag(content))
-                return title_rows, None
-
-        # If the conditions above are not met, this is not a title table.
-        # Return an empty list to signify no titles were extracted.
-        return [], None
-
-    def _is_single_title_table(self, content_rows: list[bs4.Tag]) -> bool:
-        """
-        Check if table with 1-2 rows is just a title wrapper.
-
-        Criteria:
-        - Short combined text (< 200 chars)
-        - Has visual styling (background-color, large colspan)
-        - Not a data table (no multiple columns with data)
-
-        Args:
-            content_rows: List of table rows with text content
-
-        Returns:
-            True if this is a title wrapper, False otherwise
-        """
-        if not content_rows:
-            return False
-
-        # Get combined text from all content rows
-        combined_text = " ".join(row.get_text(strip=True) for row in content_rows)
-
-        # Short text suggests title, not data
-        if len(combined_text) > 200:
-            return False
-
-        # Check for styling indicators
-        has_styling = False
-        for row in content_rows:
-            cells = row.find_all(["td", "th"])
-
-            # Large colspan suggests title (spanning across layout)
-            has_large_colspan = any(
-                cell.get("colspan") and int(cell.get("colspan", 1)) >= 3
-                for cell in cells
+        title = self._find_title_within_table(element)
+        if title:
+            # By creating a new TitleElement, we are effectively replacing the
+            # TableElement in the final output.
+            return TitleElement.create_from_element(
+                element,
+                # The text of the new title element is the title we extracted.
+                text=title,
             )
 
         return element
@@ -245,25 +136,10 @@ class TableTitleExtractor(AbstractElementwiseProcessingStep):
         """
         if not text:
             return False
-
-        # Check if it's a data table (has numbers)
-        has_numbers = any(c.isdigit() for c in text)
-
-        # Count rows with text
-        bs4_tag = html_tag._bs4
-        if bs4_tag.name == "table":
-            table = bs4_tag
-        else:
-            table = bs4_tag.find("table")
-
-        if table:
-            content_rows = [
-                row for row in table.find_all("tr")
-                if row.get_text(strip=True)
-            ]
-            has_multiple_rows = len(content_rows) >= 2
-
-            return has_numbers or has_multiple_rows
-
-        # If not a table or can't determine, use text length
-        return len(text) > 50
+        
+        alpha_chars = [char for char in text if char.isalpha()]
+        if not alpha_chars:
+            return False
+            
+        uppercase_ratio = sum(1 for char in alpha_chars if char.isupper()) / len(alpha_chars)
+        return uppercase_ratio >= threshold

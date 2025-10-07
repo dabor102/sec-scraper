@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Callable
 
 from sec_parser.processing_steps.table_title_extractor import TableTitleExtractor
+from sec_parser.processing_steps.table_title_splitter import TableTitleSplitter 
 
 from sec_parser.processing_engine.html_tag_parser import (
     AbstractHtmlTagParser,
@@ -155,17 +156,18 @@ class AbstractSemanticElementParser(ABC):
         for step in steps:
             elements = step.process(elements)
 
-        if not include_irrelevant_elements:
-            elements = [
-                e for e in elements if isinstance(e, IrrelevantElement) is False
-            ]
+        ### Commented out to show ALL elements 
+        #if not include_irrelevant_elements:
+        #    elements = [
+        #        e for e in elements if isinstance(e, IrrelevantElement) is False
+        #   ]
+
         if unwrap_elements is False:
             return elements
         return CompositeSemanticElement.unwrap_elements(
             elements,
             include_containers=include_containers,
         )
-
 
 class Edgar10QParser(AbstractSemanticElementParser):
     """
@@ -187,6 +189,7 @@ class Edgar10QParser(AbstractSemanticElementParser):
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
             TableTitleExtractor(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
+            TableTitleSplitter(),  # NEW - Add after TableClassifier
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10Q(types_to_process={NotYetClassifiedElement}),
             IntroductorySectionElementClassifier(),
@@ -233,6 +236,7 @@ class Edgar10KParser(AbstractSemanticElementParser):
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
             TableTitleExtractor(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
+            TableTitleSplitter(),  # NEW - Add after TableClassifier
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10K(types_to_process={NotYetClassifiedElement}),
             IntroductorySectionElementClassifier(),

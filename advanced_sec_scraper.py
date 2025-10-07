@@ -236,14 +236,14 @@ def generate_fiscal_calendar(fye_month: int) -> dict:
 
 
 # ============================================================================
-# PERIOD PARSING - Consolidated
+# PERIOD PARSING
 # ============================================================================
 
 def parse_period(header_text: str, context: ScrapingContext, 
                 is_snapshot: bool = False) -> str | None:
     """
     Unified period parser for both snapshot (balance sheet) and duration statements.
-    Enhanced to handle month abbreviations and full date formats.
+    Enhanced to handle month abbreviations, full date formats, and correct fiscal year assignment.
     
     Args:
         header_text: Text to parse for period information
@@ -268,6 +268,7 @@ def parse_period(header_text: str, context: ScrapingContext,
     # Try to parse as a date first using dateutil
     found_month = None
     found_quarter = None
+    parsed_date = None
     
     try:
         # Try parsing the entire string as a date
@@ -307,7 +308,14 @@ def parse_period(header_text: str, context: ScrapingContext,
     # Balance sheet / snapshot periods
     if is_snapshot:
         if found_quarter:
-            return f"{found_quarter} {year}"
+            # Determine the correct fiscal year
+            fiscal_year = determine_fiscal_year(
+                calendar_year=int(year),
+                month_name=found_month,
+                parsed_date=parsed_date,
+                context=context
+            )
+            return f"{found_quarter} {fiscal_year}"
         # Fallback: assume Q4/year-end if only year is present
         logger.debug(f"No month found in '{header_text}'. Assuming Q4 for balance sheet.")
         return f"Q4 {year}"
@@ -326,6 +334,69 @@ def parse_period(header_text: str, context: ScrapingContext,
         return f"{found_quarter} {year}"
     
     return None
+
+def determine_fiscal_year(calendar_year: int, month_name: str, 
+                          parsed_date, context: ScrapingContext) -> int:
+    """
+    Determines the fiscal year for a given date based on the company's fiscal year end.
+    
+    For balance sheets, the fiscal year is the year in which the fiscal period ENDS.
+    
+    Args:
+        calendar_year: The calendar year from the date (e.g., 2025)
+        month_name: The month name (e.g., 'january')
+        parsed_date: The parsed datetime object (if available)
+        context: Scraping context with fiscal calendar
+        
+    Returns:
+        The fiscal year (e.g., 2024 for a balance sheet dated January 31, 2025 with FYE in January)
+    """
+    # Get the fiscal year-end month number (1-12)
+    # We need to reverse-engineer this from the fiscal calendar
+    # The FYE month is the last month in Q4
+    
+    fye_month_name = None
+    for month, quarter in context.fiscal_calendar.items():
+        if quarter == 'Q4':
+            fye_month_name = month  # Keep updating, last one will be the FYE
+    
+    if not fye_month_name:
+        logger.warning("Could not determine FYE month from fiscal calendar")
+        return calendar_year
+    
+    # Convert month name to number
+    month_to_num = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+        'september': 9, 'october': 10, 'november': 11, 'december': 12
+    }
+    
+    fye_month_num = month_to_num.get(fye_month_name)
+    
+    if parsed_date:
+        date_month_num = parsed_date.month
+    else:
+        # Fall back to month_name if no parsed_date
+        date_month_num = month_to_num.get(month_name)
+    
+    if not fye_month_num or not date_month_num:
+        logger.warning(f"Could not determine month numbers for FYE or date")
+        return calendar_year
+    
+    # Rule: If the date month is <= FYE month, it's the end of the previous fiscal year
+    # Example: FYE in January (1), date in January 2025 → FY2024
+    # Example: FYE in January (1), date in July 2025 → FY2025
+    
+    if date_month_num <= fye_month_num:
+        fiscal_year = calendar_year - 1
+        logger.debug(f"Date month {date_month_num} <= FYE month {fye_month_num}: "
+                    f"Fiscal year = {fiscal_year} (calendar year - 1)")
+    else:
+        fiscal_year = calendar_year
+        logger.debug(f"Date month {date_month_num} > FYE month {fye_month_num}: "
+                    f"Fiscal year = {fiscal_year} (calendar year)")
+    
+    return fiscal_year
 
 
 
@@ -442,20 +513,17 @@ def parse_header(header_rows: list[list[str]], metric_col: int,
     # Fallback to simple vertical layout
     periods = _try_vertical_header(header_rows, metric_col, context, is_snapshot)
     return periods
-
+   
 def _try_split_header(header_rows: list[list[str]], metric_col: int,
                      context: ScrapingContext, is_snapshot: bool) -> list[str]:
     """
     Handle split headers where description and years are in separate rows.
-    
+
     Common pattern:
     Row N:   [empty/units] | "Fiscal Years Ended January 31," (colspan)
     Row N+1: [units/empty] | "2023" | "2022" | "2021"
     
-    Strategy:
-    1. Find a row with date/period description but no years in data columns
-    2. Look at next row(s) for actual year values
-    3. Combine description with each year
+    Improved to match descriptions to years based on column positions.
     """
     logger.debug("Attempting split header format")
     
@@ -468,63 +536,102 @@ def _try_split_header(header_rows: list[list[str]], metric_col: int,
     
     year_pattern = re.compile(r'\b(19|20)\d{2}\b')
     
-    for desc_row_idx in range(len(header_rows) - 1):  # -1 because we look ahead
+    for desc_row_idx in range(len(header_rows) - 1):
         desc_row = header_rows[desc_row_idx]
         
-        # Check all cells in this row for description text
-        row_text = ' '.join(cell for cell in desc_row if cell.strip())
-        row_text_lower = row_text.lower()
+        # Build a map of column positions to description text
+        desc_map = {}  # {col_idx: description_text}
         
-        # Does this row have a period description?
-        has_description = any(pattern.search(row_text_lower) for pattern in description_patterns)
+        for col_idx, cell in enumerate(desc_row):
+            if col_idx <= metric_col:
+                continue
+            
+            cell_text = cell.strip()
+            if not cell_text:
+                continue
+            
+            # Check if this cell has a description
+            has_description = any(pattern.search(cell_text.lower()) 
+                                for pattern in description_patterns)
+            
+            if has_description:
+                desc_map[col_idx] = cell_text
         
-        if not has_description:
+        if not desc_map:
             continue
         
-        # Check if data columns in this row are mostly empty or have no years
-        data_cells = desc_row[metric_col + 1:]
-        years_in_desc_row = [cell for cell in data_cells if cell.strip() and year_pattern.search(cell)]
-        
-        if years_in_desc_row:
-            # Years are in the same row as description - not a split header
-            continue
-        
-        logger.debug(f"Found description row {desc_row_idx}: '{row_text[:50]}...'")
+        logger.debug(f"Found description row {desc_row_idx} with {len(desc_map)} descriptions at columns: {list(desc_map.keys())}")
         
         # Look at next few rows for years
         for year_row_idx in range(desc_row_idx + 1, min(desc_row_idx + 4, len(header_rows))):
             year_row = header_rows[year_row_idx]
-            year_data_cells = year_row[metric_col + 1:]
             
-            # Find cells with years
-            year_cells = []
-            for cell in year_data_cells:
-                cell_stripped = cell.strip()
-                if cell_stripped and year_pattern.search(cell_stripped):
-                    year_cells.append(cell_stripped)
+            # Build a map of column positions to years
+            year_map = {}  # {col_idx: year_text}
             
-            if not year_cells:
+            for col_idx, cell in enumerate(year_row):
+                if col_idx <= metric_col:
+                    continue
+                
+                cell_text = cell.strip()
+                if cell_text and year_pattern.search(cell_text):
+                    year_map[col_idx] = cell_text
+            
+            if not year_map:
                 continue
             
-            logger.debug(f"Found year row {year_row_idx} with years: {year_cells}")
+            logger.debug(f"Found year row {year_row_idx} with {len(year_map)} years at columns: {list(year_map.keys())}")
             
-            # Combine description with each year
+            # Match each year to its corresponding description based on column proximity
             periods = []
-            for year_cell in year_cells:
-                combined_text = f"{row_text} {year_cell}"
-                period = parse_period(combined_text, context, is_snapshot)
-                if period and period not in periods:
-                    periods.append(period)
+            year_columns = sorted(year_map.keys())
+            
+            for year_col in year_columns:
+                year_text = year_map[year_col]
+                
+                # Find the description that "covers" this year column
+                # A description "covers" a year if:
+                # 1. The description column is before or at the year column
+                # 2. It's the closest description to the left of the year
+                
+                best_desc = None
+                best_desc_col = -1
+                
+                for desc_col, desc_text in desc_map.items():
+                    # The description should be at or before the year column
+                    # But we need to account for colspan expansion
+                    # Generally, we want the rightmost description that's still <= year_col
+                    if desc_col <= year_col and desc_col > best_desc_col:
+                        best_desc = desc_text
+                        best_desc_col = desc_col
+                
+                # If no description to the left, try finding one in a nearby column
+                # (handles cases where colspan shifted positions slightly)
+                if best_desc is None and desc_map:
+                    # Find description with minimum distance to year column
+                    min_distance = float('inf')
+                    for desc_col, desc_text in desc_map.items():
+                        distance = abs(desc_col - year_col)
+                        if distance < min_distance:
+                            min_distance = distance
+                            best_desc = desc_text
+                            best_desc_col = desc_col
+                
+                if best_desc:
+                    combined_text = f"{best_desc} {year_text}"
+                    period = parse_period(combined_text, context, is_snapshot)
+                    
+                    if period and period not in periods:
+                        periods.append(period)
+                        logger.debug(f"Matched year at col {year_col} to description at col {best_desc_col}: '{combined_text}' -> {period}")
+                else:
+                    logger.debug(f"Could not find matching description for year at column {year_col}")
             
             if periods:
                 logger.info(f"Successfully parsed split header: {periods}")
                 return periods
     
     return []
-
-
-
-
 
 def _try_horizontal_header(header_rows: list[list[str]], metric_col: int,
                            context: ScrapingContext, is_snapshot: bool) -> list[str]:
@@ -568,7 +675,6 @@ def _try_horizontal_header(header_rows: list[list[str]], metric_col: int,
             return periods
     
     return []
-
 
 def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
                              context: ScrapingContext, is_snapshot: bool) -> list[str]:
@@ -673,8 +779,6 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
         return ordered_periods
     
     return []
-
-
 
 def _try_vertical_header(header_rows: list[list[str]], metric_col: int,
                         context: ScrapingContext, is_snapshot: bool) -> list[str]:
@@ -807,28 +911,38 @@ def build_grid_from_table(table: Tag) -> list[list[str]]:
     
     return clean_grid
 
-
 def split_table_into_header_and_body(grid: list[list[str]], 
                                      metric_col: int) -> tuple[list[list[str]], int]:
     """
     Splits table grid into header and body sections.
     
-    Improved to better detect units declarations and avoid false positives.
+    Improved to detect date patterns and rows with years as headers.
     """
     if not grid:
         return [], 0
 
     header_keywords = {'year', 'ended', 'month', 'quarter', 'period', 'fiscal'}
     
-    # Combined pattern for units declarations (both parenthetical and plain)
+    # Month names to detect dates
+    month_names = {
+        'january', 'february', 'march', 'april', 'may', 'june',
+        'july', 'august', 'september', 'october', 'november', 'december',
+        'jan', 'feb', 'mar', 'apr', 'may', 'jun', 
+        'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+    }
+    
+    # Combined pattern for units declarations
     units_pattern = re.compile(
-    r'^\s*'  # Start of string, optional whitespace
-    r'(?:'   # Non-capturing group for alternatives
-        r'\([^)]*(?:millions|thousands|billions|shares|per\s+share|dollars)[^)]*\)|'  # Full parenthetical
-        r'\(?\s*(?:amounts?\s+)?in\s+(?:thousands|millions|billions|shares|dollars|whole\s+dollars)'  # Plain format
-    r')',
-    re.IGNORECASE
-)
+        r'^\s*'
+        r'(?:'
+            r'\([^)]*(?:millions|thousands|billions|shares|per\s+share|dollars)[^)]*\)|'
+            r'\(?\s*(?:amounts?\s+)?in\s+(?:thousands|millions|billions|shares|dollars|whole\s+dollars)'
+        r')',
+        re.IGNORECASE
+    )
+    
+    # Pattern to detect years
+    year_pattern = re.compile(r'\b(19|20)\d{2}\b')
 
     for row_idx, row in enumerate(grid):
         if row_idx > 15:  # Safety break
@@ -848,18 +962,45 @@ def split_table_into_header_and_body(grid: list[list[str]],
         if any(keyword in metric_text_lower for keyword in header_keywords):
             continue
             
-        # Unit declarations indicate header (both patterns)
         # Unit declarations indicate header
         if units_pattern.match(metric_text):
             logger.debug(f"Row {row_idx} identified as header (units): '{metric_text}'")
             continue
         
-        # Check if row looks like standalone years (like "2023  2022  2021")
-        # This happens when years are in the metric column
+        # Standalone years in metric column indicate header
         year_only_pattern = re.compile(r'^(19|20)\d{2}$')
         if year_only_pattern.match(metric_text.strip()):
             logger.debug(f"Row {row_idx} identified as header (year): '{metric_text}'")
             continue
+        
+        # NEW: Check if metric text is a month name or contains a month
+        if any(month in metric_text_lower for month in month_names):
+            # Additionally check if data cells contain years
+            data_cells = row[metric_col + 1:]
+            has_years = any(year_pattern.search(cell) for cell in data_cells if cell.strip())
+            
+            if has_years:
+                logger.debug(f"Row {row_idx} identified as header (date with years): '{metric_text}'")
+                continue
+            else:
+                # Month name but no years in data cells - might be actual data
+                # Check if it looks like a complete date (e.g., "June 30, 2025")
+                if year_pattern.search(metric_text):
+                    logger.debug(f"Row {row_idx} identified as header (complete date): '{metric_text}'")
+                    continue
+        
+        # NEW: Check if this row has only years in data columns (common header pattern)
+        # Pattern: metric column has some text, data columns have only years
+        data_cells = row[metric_col + 1:]
+        non_empty_data_cells = [cell.strip() for cell in data_cells if cell.strip()]
+        
+        if non_empty_data_cells:
+            # Check if ALL non-empty data cells are just years
+            all_years = all(year_only_pattern.match(cell) for cell in non_empty_data_cells)
+            
+            if all_years:
+                logger.debug(f"Row {row_idx} identified as header (row with only years in data): '{metric_text}'")
+                continue
 
         # This row has text but no header indicators - it's the body start
         logger.info(f"Body starts at row {row_idx}: '{metric_text}'")
@@ -1208,21 +1349,27 @@ def find_statement_titles(tree: list, keywords: dict) -> list:
     
     return matching_titles
 
-
 def find_text_in_html(soup: BeautifulSoup, target_text: str) -> Tag | None:
-    """Finds an element by exact or 'starts with' match, excluding tables."""
+    """
+    Finds an element by exact or 'starts with' match, excluding tables.
+    Handles cases where text is split across multiple child elements.
+    """
     normalized_target = normalize_text(target_text)
     spaceless_target = normalized_target.replace(" ", "")
     
     if not spaceless_target:
         return None
     
-    tags_to_search = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'font', 'b', 'strong']
+    # Tags that typically contain titles as direct text
+    inline_tags = ['span', 'b', 'strong', 'i', 'em', 'font']
+    container_tags = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
     
     exact_matches = []
     starts_with_matches = []
+    parent_matches = []  # For combined text from children
 
-    for element in soup.find_all(tags_to_search):
+    # First pass: try individual elements
+    for element in soup.find_all(inline_tags + container_tags):
         # Skip elements inside tables
         if element.find_parent('table'):
             continue
@@ -1239,6 +1386,7 @@ def find_text_in_html(soup: BeautifulSoup, target_text: str) -> Tag | None:
         elif spaceless_element_text.startswith(spaceless_target):
             starts_with_matches.append(element)
     
+    # Return if we found direct matches
     if exact_matches:
         logger.info(f"Found exact match in '{exact_matches[0].name}' tag")
         return exact_matches[0]
@@ -1247,8 +1395,66 @@ def find_text_in_html(soup: BeautifulSoup, target_text: str) -> Tag | None:
         logger.info(f"Found 'starts with' match in '{starts_with_matches[0].name}' tag")
         return starts_with_matches[0]
     
+    # Second pass: try combining text from sibling elements within a parent
+    logger.debug("No direct match found, trying to combine text from child elements")
+    
+    for element in soup.find_all(container_tags):
+        # Skip elements inside tables
+        if element.find_parent('table'):
+            continue
+        
+        # Get direct children (not all descendants)
+        children = list(element.children)
+        
+        # Skip if no children or if it contains a table
+        if not children or element.find('table', recursive=False):
+            continue
+        
+        # Combine text from direct children, skipping nested tables
+        combined_texts = []
+        for child in children:
+            if isinstance(child, NavigableString):
+                text = str(child).strip()
+                if text:
+                    combined_texts.append(text)
+            elif isinstance(child, Tag):
+                # Skip if this child contains a table
+                if child.find('table'):
+                    continue
+                child_text = normalize_text(child.get_text("", strip=True))
+                if child_text:
+                    combined_texts.append(child_text)
+        
+        if not combined_texts:
+            continue
+        
+        combined_text = " ".join(combined_texts)
+        spaceless_combined = combined_text.replace(" ", "")
+        
+        # Check length to avoid matching huge containers
+        if len(spaceless_combined) > len(spaceless_target) * 10 and len(spaceless_combined) > 300:
+            continue
+        
+        if spaceless_combined == spaceless_target:
+            parent_matches.append((element, 'exact'))
+            logger.info(f"Found exact match by combining children in '{element.name}' tag")
+        elif spaceless_combined.startswith(spaceless_target):
+            parent_matches.append((element, 'starts_with'))
+            logger.debug(f"Found 'starts with' match by combining children in '{element.name}' tag")
+    
+    # Prioritize exact matches over starts_with
+    exact_parent_matches = [m for m in parent_matches if m[1] == 'exact']
+    if exact_parent_matches:
+        return exact_parent_matches[0][0]
+    
+    starts_with_parent_matches = [m for m in parent_matches if m[1] == 'starts_with']
+    if starts_with_parent_matches:
+        logger.info(f"Found 'starts with' match by combining children")
+        return starts_with_parent_matches[0][0]
+    
     logger.warning(f"Could not find element for: '{target_text}'")
     return None
+
 
 def find_next_table(element: Tag) -> Tag | None:
     """Find next data table after given element, skipping title wrapper tables."""
