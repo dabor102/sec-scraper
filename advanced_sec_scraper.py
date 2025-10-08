@@ -5,7 +5,7 @@ import logging
 import requests
 import json
 import traceback
-import time
+from datetime import datetime
 from collections import Counter
 from dataclasses import dataclass
 import pandas as pd
@@ -27,6 +27,18 @@ from sec_parser.semantic_elements.top_section_title import TopSectionTitle
 # ============================================================================
 
 HEADERS = {'User-Agent': 'Your Name your.email@example.com'}
+
+# ============================================================================
+# REGEX PATTERNS (PRE-COMPILED FOR PERFORMANCE)
+# ============================================================================
+
+YEAR_PATTERN = re.compile(r'\b(19\d{2}|20\d{2})\b')
+FY_PATTERN = re.compile(r"\b(?:twelve\s*months|(?:fiscal\s+)?years?)\s*ended\b", re.IGNORECASE)
+NINE_MONTHS_PATTERN = re.compile(r"\b(?:nine|9)\s*months?\s*ended\b", re.IGNORECASE)
+SIX_MONTHS_PATTERN = re.compile(r"\b(?:six|6)\s*months?\s*ended\b", re.IGNORECASE)
+QUARTER_PATTERN = re.compile(r"\b(?:three|3)\s*months?\s*ended|quarter(?:ly)?\s+period\b", re.IGNORECASE)
+
+
 
 # Statement keywords for finding financial statements
 STATEMENT_KEYWORDS = {
@@ -234,165 +246,154 @@ def generate_fiscal_calendar(fye_month: int) -> dict:
 # PERIOD PARSING
 # ============================================================================
 
-def parse_period(header_text: str, context: ScrapingContext, 
-                is_snapshot: bool = False) -> str | None:
+def parse_period(header_text: str, context: ScrapingContext, is_snapshot: bool = False) -> str | None:
     """
-    Unified period parser for both snapshot (balance sheet) and duration statements.
-    Enhanced to handle month abbreviations, full date formats, and correct fiscal year assignment.
-    
-    Args:
-        header_text: Text to parse for period information
-        context: Scraping context with fiscal calendar
-        is_snapshot: True for balance sheets, False for income/cash flow statements
+    Parses a header string to determine the financial period in a robust, calendar-aware manner.
+    (This version includes extensive debugging steps)
     """
+    # --- DEBUG STEP: Log the initial input ---
+    # This is the most important step. It shows you the exact text that the header
+    # parsing strategies are combining and sending to this function.
+    logger.debug(f"--- PARSING NEW PERIOD ---")
+    logger.debug(f"Input header text: '{header_text}'")
+
     if not header_text or not header_text.strip():
         return None
-    
-    # Sanitize text
-    header_text = re.sub(r'([a-z])([A-Z])', r'\1 \2', header_text)
-    header_text = re.sub(r'(\d+),(\d{4})', r'\1, \2', header_text)
-    
+
+    # --- Step 1: Sanitize text and extract the calendar year ---
     header_lower = header_text.lower()
-    
-    # Extract year
-    year_match = re.search(r'\b(19\d{2}|20\d{2})\b', header_text)
+    year_match = YEAR_PATTERN.search(header_text)
     if not year_match:
+        logger.debug(f"No year found in header.")
         return None
-    year = year_match.group(1)
+    calendar_year = int(year_match.group(1))
     
-    # Try to parse as a date first using dateutil
-    found_month = None
-    found_quarter = None
-    parsed_date = None
-    
+    # --- DEBUG STEP: Log the found year ---
+    logger.debug(f"Found calendar year: {calendar_year}")
+
+    # --- Step 2: Attempt to parse a specific date and find the month/quarter ---
+    parsed_date, month_name, quarter = None, None, None
     try:
-        # Try parsing the entire string as a date
         parsed_date = parse_date(header_text, fuzzy=True)
-        month_num = parsed_date.month
-        month_name = parsed_date.strftime('%B').lower()  # Full month name
-        
-        # Check if this month is in fiscal calendar
+        month_name = parsed_date.strftime('%B').lower()
         if month_name in context.fiscal_calendar:
-            found_month = month_name
-            found_quarter = context.fiscal_calendar[month_name]
-            logger.debug(f"Parsed date '{header_text}' -> Month: {month_name}, Quarter: {found_quarter}")
-    except (ValueError, OverflowError, AttributeError):
-        # If date parsing fails, try keyword matching
-        pass
-    
-    # If date parsing didn't work, try finding month names or abbreviations
-    if not found_month:
-        # First try full month names
-        for month in context.fiscal_calendar:
-            if month in header_lower:
-                found_month = month
-                found_quarter = context.fiscal_calendar[month]
-                break
+            quarter = context.fiscal_calendar[month_name]
         
-        # If not found, try abbreviations
-        if not found_month:
-            for abbrev, full_month in MONTH_ABBREV.items():
-                # Use word boundary to avoid matching "december" when looking for "dec"
-                if re.search(r'\b' + abbrev + r'\b', header_lower):
-                    if full_month in context.fiscal_calendar:
-                        found_month = full_month
-                        found_quarter = context.fiscal_calendar[full_month]
-                        logger.debug(f"Found month abbreviation '{abbrev}' -> {full_month} -> {found_quarter}")
-                        break
+        # --- DEBUG STEP: Log the results of date parsing ---
+        logger.debug(f"Date parsing successful: date='{parsed_date.date()}', month='{month_name}', mapped_quarter='{quarter}'")
+
+    except (ValueError, OverflowError, AttributeError):
+        # --- DEBUG STEP: Log the date parsing failure and fallback ---
+        logger.debug(f"Date parsing with 'dateutil' failed. Falling back to keyword search.")
+        for month, q in context.fiscal_calendar.items():
+            if month in header_lower:
+                month_name, quarter = month, q
+                logger.debug(f"Fallback found month='{month_name}', mapped_quarter='{quarter}'")
+                break
+
+    if not quarter:
+        logger.debug(f"Could not determine quarter from text.")
+        if is_snapshot or QUARTER_PATTERN.search(header_lower):
+            return None
+            
+    # --- Step 3: Determine the correct fiscal year ---
+    # This calls the other function, which has its own debug logs.
+    logger.debug(f"Determining fiscal year for calendar_year={calendar_year}, month='{month_name}'")
+    fiscal_year = determine_fiscal_year(calendar_year, month_name, parsed_date, context)
     
-    # Balance sheet / snapshot periods
+    # --- DEBUG STEP: Log the final calculated fiscal year ---
+    logger.debug(f"Final fiscal year: {fiscal_year}")
+
+    # --- Step 4: Construct the final period string based on statement type ---
+    final_period = None
     if is_snapshot:
-        if found_quarter:
-            # Determine the correct fiscal year
-            fiscal_year = determine_fiscal_year(
-                calendar_year=int(year),
-                month_name=found_month,
-                parsed_date=parsed_date,
-                context=context
-            )
-            return f"{found_quarter} {fiscal_year}"
-        # Fallback: assume Q4/year-end if only year is present
-        logger.debug(f"No month found in '{header_text}'. Assuming Q4 for balance sheet.")
-        return f"Q4 {year}"
-    
-    # Duration periods (income statement, cash flow, etc.)
-    if 'twelve months' in header_lower or 'year ended' in header_lower or 'fiscal year' in header_lower:
-        return f"FY {year}"
-    elif 'nine months' in header_lower:
-        return f"Q1-Q3 {year}"
-    elif 'six months' in header_lower:
-        return f"Q1-Q2 {year}"
-    elif 'three months' in header_lower or 'quarter' in header_lower:
-        return f"{found_quarter} {year}" if found_quarter else None
-    elif found_quarter:
-        # Fallback for headers with only month/date
-        return f"{found_quarter} {year}"
-    
-    return None
+        final_period = f"{quarter} {fiscal_year}"
+    elif FY_PATTERN.search(header_lower):
+        final_period = f"FY {fiscal_year}"
+    elif NINE_MONTHS_PATTERN.search(header_lower):
+        final_period = f"Nine Months {fiscal_year}"
+    elif SIX_MONTHS_PATTERN.search(header_lower):
+        final_period = f"Six Months {fiscal_year}"
+    elif QUARTER_PATTERN.search(header_lower):
+        final_period = f"{quarter} {fiscal_year}"
+    elif quarter:
+        final_period = f"{quarter} {fiscal_year}"
+
+    # --- DEBUG STEP: Log the final decision before returning ---
+    if final_period:
+        logger.debug(f"SUCCESS: Final period string is '{final_period}'")
+    else:
+        logger.warning(f"FAILURE: Could not classify period for '{header_text}'")
+        
+    return final_period
 
 def determine_fiscal_year(calendar_year: int, month_name: str, 
                           parsed_date, context: ScrapingContext) -> int:
     """
-    Determines the fiscal year for a given date based on the company's fiscal year end.
-    
-    For balance sheets, the fiscal year is the year in which the fiscal period ENDS.
-    
+    Determines the correct fiscal year for a given date, crucial for balance sheets.
+
+    The fiscal year is the year in which a company's fiscal period ENDS. For example,
+    if a company's FYE is January 31, a balance sheet dated Jan 31, 2025,
+    represents the end of the 2024 fiscal year.
+
     Args:
-        calendar_year: The calendar year from the date (e.g., 2025)
-        month_name: The month name (e.g., 'january')
-        parsed_date: The parsed datetime object (if available)
-        context: Scraping context with fiscal calendar
-        
+        calendar_year: The calendar year from the parsed date (e.g., 2025).
+        month_name: The lowercase month name (e.g., 'january').
+        parsed_date: The parsed datetime object from dateutil, if available.
+        context: The scraping context containing the fiscal calendar.
+
     Returns:
-        The fiscal year (e.g., 2024 for a balance sheet dated January 31, 2025 with FYE in January)
+        The correctly calculated fiscal year.
     """
-    # Get the fiscal year-end month number (1-12)
-    # We need to reverse-engineer this from the fiscal calendar
-    # The FYE month is the last month in Q4
-    
-    fye_month_name = None
-    for month, quarter in context.fiscal_calendar.items():
-        if quarter == 'Q4':
-            fye_month_name = month  # Keep updating, last one will be the FYE
-    
-    if not fye_month_name:
-        logger.warning("Could not determine FYE month from fiscal calendar")
+    # --- Step 1: Efficiently find the Fiscal Year End (FYE) month ---
+    # This is an improvement over the original's loop. It finds the last month
+    # in the Q4 list, which corresponds to the FYE month.
+    # Note: This could be further optimized by storing the FYE month number
+    # directly in the context when it's first discovered.
+    try:
+        q4_months = [m for m, q in context.fiscal_calendar.items() if q == 'Q4']
+        if not q4_months:
+            logger.warning("Could not determine Q4 months from fiscal calendar. Returning calendar year.")
+            return calendar_year
+        fye_month_name = q4_months[-1]
+        fye_month = datetime.strptime(fye_month_name, '%B').month
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Failed to determine FYE month: {e}. Returning calendar year.")
         return calendar_year
-    
-    # Convert month name to number
-    month_to_num = {
-        'january': 1, 'february': 2, 'march': 3, 'april': 4,
-        'may': 5, 'june': 6, 'july': 7, 'august': 8,
-        'september': 9, 'october': 10, 'november': 11, 'december': 12
-    }
-    
-    fye_month_num = month_to_num.get(fye_month_name)
-    
+
+    # --- Step 2: Determine the month of the financial statement's date ---
     if parsed_date:
-        date_month_num = parsed_date.month
+        date_month = parsed_date.month
     else:
-        # Fall back to month_name if no parsed_date
-        date_month_num = month_to_num.get(month_name)
-    
-    if not fye_month_num or not date_month_num:
-        logger.warning(f"Could not determine month numbers for FYE or date")
-        return calendar_year
-    
-    # Rule: If the date month is <= FYE month, it's the end of the previous fiscal year
-    # Example: FYE in January (1), date in January 2025 → FY2024
-    # Example: FYE in January (1), date in July 2025 → FY2025
-    
-    if date_month_num <= fye_month_num:
+        try:
+            date_month = datetime.strptime(month_name, '%B').month
+        except ValueError:
+            logger.warning(f"Could not parse month name '{month_name}'. Returning calendar year.")
+            return calendar_year
+
+    # --- Step 3: Apply the correct fiscal year logic ---
+    # The fiscal year starts in the month *after* the FYE month.
+    # The modulo operator handles the wrap-around from December (12) to January (1).
+    fy_start_month = (fye_month % 12) + 1
+
+    # **THE CORE LOGIC:**
+    # If the statement's date month is BEFORE the fiscal year starts,
+    # it belongs to the *previous* fiscal year's reporting period.
+    # Otherwise, it belongs to the current calendar year's fiscal period.
+    if date_month < fy_start_month:
         fiscal_year = calendar_year - 1
-        logger.debug(f"Date month {date_month_num} <= FYE month {fye_month_num}: "
-                    f"Fiscal year = {fiscal_year} (calendar year - 1)")
+        logger.debug(
+            f"Date month {date_month} is before FY start {fy_start_month}. "
+            f"Fiscal Year: {calendar_year} -> {fiscal_year}"
+        )
     else:
         fiscal_year = calendar_year
-        logger.debug(f"Date month {date_month_num} > FYE month {fye_month_num}: "
-                    f"Fiscal year = {fiscal_year} (calendar year)")
+        logger.debug(
+            f"Date month {date_month} is on/after FY start {fy_start_month}. "
+            f"Fiscal Year: {calendar_year}"
+        )
     
     return fiscal_year
-
 
 
 def correct_fiscal_periods(periods: list[str]) -> list[str]:
@@ -490,138 +491,104 @@ def parse_header(header_rows: list[list[str]], metric_col: int,
     if not header_rows:
         return []
     
-    # Try horizontal layout first
-    periods = _try_horizontal_header(header_rows, metric_col, context, is_snapshot)
-    if periods:
-        return periods
-    
-    # Try split header layout (common pattern: description row + years row)
+    # STRATEGY 1: Try the split header layout first. This is a very common
+    # and complex pattern that needs a specialized parser.
     periods = _try_split_header(header_rows, metric_col, context, is_snapshot)
     if periods:
         return periods
     
-    # Try broadcasting layout
+    # STRATEGY 2: Try the broadcasting layout for other layered header types.
     periods = _try_broadcasting_header(header_rows, metric_col, context, is_snapshot)
     if periods:
         return periods
     
-    # Fallback to simple vertical layout
+    # STRATEGY 3: Fallback to the simple horizontal layout. This is for basic
+    # tables and is now less likely to cause false positives.
+    periods = _try_horizontal_header(header_rows, metric_col, context, is_snapshot)
+    if periods:
+        return periods
+    
+    # STRATEGY 4: Last resort, try a simple vertical layout.
     periods = _try_vertical_header(header_rows, metric_col, context, is_snapshot)
     return periods
-   
+
+# ✅ Replace the existing _try_split_header function with this one
+
+# ✅ Replace the existing _try_split_header function with this one
+
 def _try_split_header(header_rows: list[list[str]], metric_col: int,
                      context: ScrapingContext, is_snapshot: bool) -> list[str]:
     """
     Handle split headers where description and years are in separate rows.
-
-    Common pattern:
-    Row N:   [empty/units] | "Fiscal Years Ended January 31," (colspan)
-    Row N+1: [units/empty] | "2023" | "2022" | "2021"
-    
-    Improved to match descriptions to years based on column positions.
+    IMPROVED to handle three-layer headers (desc -> month -> year).
     """
-    logger.debug("Attempting split header format")
+    logger.debug("Attempting improved split header format")
     
-    # Patterns to identify description rows
     description_patterns = [
-        re.compile(r'(?:fiscal\s+)?(?:years?|months?|quarters?)\s+ended', re.IGNORECASE),
-        re.compile(r'(?:three|six|nine|twelve)\s+months?\s+ended', re.IGNORECASE),
+        re.compile(r'(?:fiscal\s+)?(?:years?|months?|quarters?)\s*ended', re.IGNORECASE),
+        re.compile(r'(?:three|six|nine|twelve)\s*months?\s*ended', re.IGNORECASE),
         re.compile(r'as\s+of', re.IGNORECASE),
     ]
-    
     year_pattern = re.compile(r'\b(19|20)\d{2}\b')
     
     for desc_row_idx in range(len(header_rows) - 1):
         desc_row = header_rows[desc_row_idx]
         
-        # Build a map of column positions to description text
-        desc_map = {}  # {col_idx: description_text}
-        
+        desc_map = {}
         for col_idx, cell in enumerate(desc_row):
-            if col_idx <= metric_col:
-                continue
-            
             cell_text = cell.strip()
-            if not cell_text:
-                continue
-            
-            # Check if this cell has a description
-            has_description = any(pattern.search(cell_text.lower()) 
-                                for pattern in description_patterns)
-            
-            if has_description:
+            if col_idx > metric_col and cell_text and any(p.search(cell_text) for p in description_patterns):
                 desc_map[col_idx] = cell_text
         
         if not desc_map:
             continue
         
-        logger.debug(f"Found description row {desc_row_idx} with {len(desc_map)} descriptions at columns: {list(desc_map.keys())}")
+        logger.debug(f"Found description row {desc_row_idx} with descriptions: {desc_map}")
         
-        # Look at next few rows for years
         for year_row_idx in range(desc_row_idx + 1, min(desc_row_idx + 4, len(header_rows))):
             year_row = header_rows[year_row_idx]
             
-            # Build a map of column positions to years
-            year_map = {}  # {col_idx: year_text}
-            
+            year_map = {}
             for col_idx, cell in enumerate(year_row):
-                if col_idx <= metric_col:
-                    continue
-                
-                cell_text = cell.strip()
-                if cell_text and year_pattern.search(cell_text):
-                    year_map[col_idx] = cell_text
+                if col_idx > metric_col and cell.strip() and year_pattern.search(cell):
+                    year_map[col_idx] = cell.strip()
             
             if not year_map:
                 continue
             
-            logger.debug(f"Found year row {year_row_idx} with {len(year_map)} years at columns: {list(year_map.keys())}")
+            logger.debug(f"Found year row {year_row_idx} with years: {year_map}")
             
-            # Match each year to its corresponding description based on column proximity
             periods = []
-            year_columns = sorted(year_map.keys())
+            sorted_year_cols = sorted(year_map.keys())
             
-            for year_col in year_columns:
+            for year_col in sorted_year_cols:
                 year_text = year_map[year_col]
                 
-                # Find the description that "covers" this year column
-                # A description "covers" a year if:
-                # 1. The description column is before or at the year column
-                # 2. It's the closest description to the left of the year
-                
-                best_desc = None
-                best_desc_col = -1
-                
+                best_desc, best_desc_col = None, -1
                 for desc_col, desc_text in desc_map.items():
-                    # The description should be at or before the year column
-                    # But we need to account for colspan expansion
-                    # Generally, we want the rightmost description that's still <= year_col
                     if desc_col <= year_col and desc_col > best_desc_col:
-                        best_desc = desc_text
-                        best_desc_col = desc_col
-                
-                # If no description to the left, try finding one in a nearby column
-                # (handles cases where colspan shifted positions slightly)
-                if best_desc is None and desc_map:
-                    # Find description with minimum distance to year column
-                    min_distance = float('inf')
-                    for desc_col, desc_text in desc_map.items():
-                        distance = abs(desc_col - year_col)
-                        if distance < min_distance:
-                            min_distance = distance
-                            best_desc = desc_text
-                            best_desc_col = desc_col
+                        best_desc, best_desc_col = desc_text, desc_col
                 
                 if best_desc:
-                    combined_text = f"{best_desc} {year_text}"
+                    # --- NEW LOGIC: Check for a 'month row' in between ---
+                    # The month row is likely the one right before the year row.
+                    month_text = ''
+                    if year_row_idx > desc_row_idx + 1:
+                        month_row = header_rows[year_row_idx - 1]
+                        if year_col < len(month_row):
+                            month_text = month_row[year_col].strip()
+                    # --- END OF NEW LOGIC ---
+
+                    # Combine all three parts: description, month, and year.
+                    combined_text = f"{best_desc} {month_text} {year_text}"
                     period = parse_period(combined_text, context, is_snapshot)
                     
                     if period and period not in periods:
                         periods.append(period)
-                        logger.debug(f"Matched year at col {year_col} to description at col {best_desc_col}: '{combined_text}' -> {period}")
+                        logger.debug(f"Matched year at col {year_col} ('{year_text}') with desc at col {best_desc_col} -> '{period}'")
                 else:
-                    logger.debug(f"Could not find matching description for year at column {year_col}")
-            
+                    logger.warning(f"Could not find a matching description for year at col {year_col}")
+
             if periods:
                 logger.info(f"Successfully parsed split header: {periods}")
                 return periods
@@ -676,12 +643,12 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
     """
     Try broadcasting approach for layered headers.
     
-    Improved to handle empty cells from colspan better and to look across ALL rows
-    for context clues.
+    FIXED: Handles cases where a single cell in one row (e.g., "December 31")
+    provides shared context for multiple columns in rows below it.
     """
     logger.debug("Attempting broadcasting header format")
     
-    # Collect all meaningful cells with their column positions
+    # Collect all meaningful cells with their column positions from data columns
     processed_rows = []
     for row_idx, row in enumerate(header_rows):
         cells = row[metric_col + 1:]
@@ -692,7 +659,7 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
             if cell_text:
                 meaningful_cells.append({
                     'text': cell_text,
-                    'position': col_idx,
+                    'position': col_idx, # Position relative to start of data columns
                     'classifications': classify_cell_text(cell_text),
                     'row': row_idx
                 })
@@ -703,65 +670,64 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
     if not processed_rows:
         return []
 
-    # Find the row with the most items - likely the base period row
+    # Find the row with the most items - likely the most specific period row
     base_row = max(processed_rows, key=len)
     num_periods = len(base_row)
     
-    # If base row only has 1 item, this probably isn't the right approach
-    if num_periods < 2:
-        logger.debug(f"Broadcasting found only {num_periods} period(s), skipping")
+    if num_periods == 0:
         return []
     
-    logger.debug(f"Broadcasting: detected {num_periods} periods from base row")
+    logger.debug(f"Broadcasting: detected {num_periods} periods from base row {base_row[0]['row']}")
 
-    # Map each position in base row to its column
+    # Map each period index (0, 1, 2...) to its column position in the grid
     position_to_column = {i: cell['position'] for i, cell in enumerate(base_row)}
     
     # Initialize context for each period
     resolved_contexts = [{'duration': [], 'date': [], 'year': []} for _ in range(num_periods)]
 
     # Broadcast information from ALL rows
-    for row in processed_rows:
-        # Try to map cells to period positions based on column alignment
-        for cell_info in row:
-            col_pos = cell_info['position']
+    for row_of_cells in processed_rows:
+        # *** NEW LOGIC ***
+        # If a row has only one cell, it's likely a shared description
+        # (like a centered "December 31" with colspan) that applies to all periods.
+        is_shared_context_row = (len(row_of_cells) == 1 and num_periods > 1)
+
+        for cell_info in row_of_cells:
             text = cell_info['text']
             classifications = cell_info['classifications']
-            
-            # Find which period this cell belongs to based on column proximity
-            best_period_idx = None
-            min_distance = float('inf')
-            
-            for period_idx, base_col in position_to_column.items():
-                distance = abs(col_pos - base_col)
-                if distance < min_distance:
-                    min_distance = distance
-                    best_period_idx = period_idx
-            
-            # Allow some tolerance for column alignment (within 2 columns)
-            if best_period_idx is not None and min_distance <= 2:
-                if 'DURATION' in classifications:
-                    resolved_contexts[best_period_idx]['duration'].append(text)
-                if 'DATE' in classifications:
-                    resolved_contexts[best_period_idx]['date'].append(text)
-                if 'YEAR' in classifications:
-                    resolved_contexts[best_period_idx]['year'].append(text)
+
+            if is_shared_context_row:
+                # Broadcast this single cell's text to ALL period contexts
+                logger.debug(f"Broadcasting shared context '{text}' to all {num_periods} periods.")
+                for period_idx in range(num_periods):
+                    if 'DURATION' in classifications: resolved_contexts[period_idx]['duration'].append(text)
+                    if 'DATE' in classifications: resolved_contexts[period_idx]['date'].append(text)
+                    if 'YEAR' in classifications: resolved_contexts[period_idx]['year'].append(text)
+            else:
+                # Use original proximity logic for rows with multiple cells
+                col_pos = cell_info['position']
+                
+                # Find which period this cell belongs to based on column proximity
+                best_period_idx = min(
+                    range(num_periods),
+                    key=lambda i: abs(col_pos - position_to_column[i])
+                )
+                
+                # Add context if it's reasonably close (avoids mis-assigning outliers)
+                if abs(col_pos - position_to_column[best_period_idx]) <= 2:
+                    if 'DURATION' in classifications: resolved_contexts[best_period_idx]['duration'].append(text)
+                    if 'DATE' in classifications: resolved_contexts[best_period_idx]['date'].append(text)
+                    if 'YEAR' in classifications: resolved_contexts[best_period_idx]['year'].append(text)
 
     # Reconstruct period strings
     ordered_periods = []
     for idx, ctx in enumerate(resolved_contexts):
+        # Join unique text parts, preserving order
         duration_text = normalize_text(' '.join(dict.fromkeys(ctx['duration'])))
         date_text = normalize_text(' '.join(dict.fromkeys(ctx['date'])))
         year_text = normalize_text(' '.join(dict.fromkeys(ctx['year'])))
         
         combined_text = f"{duration_text} {date_text} {year_text}".strip()
-        
-        # If we only have a year, try to get description from other contexts
-        if not combined_text or (year_text and not duration_text and not date_text):
-            # Use common description from first context if available
-            if resolved_contexts[0]['duration']:
-                common_desc = resolved_contexts[0]['duration'][0]
-                combined_text = f"{common_desc} {year_text}".strip()
         
         period = parse_period(combined_text, context, is_snapshot)
         
@@ -769,9 +735,9 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
             ordered_periods.append(period)
             logger.debug(f"Period {idx}: '{combined_text}' -> {period}")
 
-    if ordered_periods and len(ordered_periods) == num_periods:
+    if ordered_periods and len(ordered_periods) >= num_periods:
         logger.info(f"Successfully parsed {len(ordered_periods)} periods via broadcasting")
-        return ordered_periods
+        return ordered_periods[:num_periods] # Trim any extras
     
     return []
 
@@ -936,7 +902,6 @@ def extract_table_from_semantic_node(title_node) -> tuple[Tag, dict] | None:
     logger.warning("Could not find table for title")
     return None
 
-
 def build_grid_from_table(table: Tag) -> list[list[str]]:
     """Builds accurate 2D list from BeautifulSoup table tag."""
     grid = []
@@ -952,6 +917,15 @@ def build_grid_from_table(table: Tag) -> list[list[str]]:
             
             colspan = int(cell_tag.get('colspan', 1))
             rowspan = int(cell_tag.get('rowspan', 1))
+
+            # --- NEW LOGIC ---
+            # Pre-process the cell to remove any tags with "visibility:hidden".
+            # This is a robust way to eliminate invisible spacing characters.
+            for hidden_tag in cell_tag.find_all(
+                style=lambda s: s and 'visibility:hidden' in s.lower()
+            ):
+                hidden_tag.decompose()
+            # --- END NEW LOGIC ---
 
             # Remove superscript tags (footnote markers)
             for sup_tag in cell_tag.find_all('sup'):
@@ -987,6 +961,7 @@ def build_grid_from_table(table: Tag) -> list[list[str]]:
         clean_grid.append(clean_row)
     
     return clean_grid
+
 
 def split_table_into_header_and_body(grid: list[list[str]], 
                                      metric_col: int,

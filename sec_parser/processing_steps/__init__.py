@@ -8,6 +8,9 @@ section identification, title parsing, and text extraction, etc.
 from sec_parser.processing_steps.abstract_classes.abstract_elementwise_processing_step import (
     AbstractElementwiseProcessingStep,
 )
+
+from sec_parser.processing_steps.composite_element_splitter import CompositeElementSplitter
+
 from sec_parser.processing_steps.abstract_classes.abstract_processing_step import (
     AbstractProcessingStep,
 )
@@ -67,7 +70,8 @@ __all__ = [
     "SupplementaryTextClassifier",
     "TableCheck",
     #"TableTitleExtractor",
-    "TableTitleSplitter",  
+    "TableTitleSplitter",
+    "CompositeElementSplitter",
     "TableClassifier",
     "TableOfContentsClassifier",
     "TextClassifier",

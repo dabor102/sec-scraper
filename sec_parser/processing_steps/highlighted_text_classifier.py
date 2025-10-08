@@ -19,14 +19,16 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class HighlightedTextClassifier(AbstractElementwiseProcessingStep):
     """
-    HighlightedText class for converting elements into HighlightedText instances.
+    HighlightedTextClassifier class for converting elements into
+    HighlightedTextElement instances.
 
     This step scans through a list of semantic elements and changes it,
-    primarily by replacing suitable candidates with HighlightedText instances.
+    primarily by replacing suitable candidates with HighlightedTextElement instances.
     """
 
     def __init__(
         self,
+        *,
         types_to_process: set[type[AbstractSemanticElement]] | None = None,
         types_to_exclude: set[type[AbstractSemanticElement]] | None = None,
     ) -> None:
@@ -40,12 +42,24 @@ class HighlightedTextClassifier(AbstractElementwiseProcessingStep):
         element: AbstractSemanticElement,
         _: ElementProcessingContext,
     ) -> AbstractSemanticElement:
+        """
+        Process a single element and classify it as HighlightedTextElement
+        if its style meets the criteria.
+        """
+        style = self._get_highlight_style(element)
+        if style:
+            return HighlightedTextElement.create_from_element(
+                element,
+                log_origin=self.__class__.__name__,
+                style=style,
+            )
+        return element
+
+    def _get_highlight_style(self, element: AbstractSemanticElement) -> TextStyle | None:
+        """
+        Determine the TextStyle of a semantic element by analyzing its
+        underlying HTML tag metrics.
+        """
         styles_metrics = element.html_tag.get_text_styles_metrics()
-        style: TextStyle = TextStyle.from_style_and_text(styles_metrics, element.text)
-        if not style:
-            return element
-        return HighlightedTextElement.create_from_element(
-            element,
-            log_origin=self.__class__.__name__,
-            style=style,
-        )
+        style = TextStyle.from_style_and_text(styles_metrics, element.text)
+        return style if style else None

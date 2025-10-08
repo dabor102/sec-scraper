@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Callable
 
 from sec_parser.processing_steps.table_title_splitter import TableTitleSplitter 
 
+from sec_parser.processing_steps.composite_element_splitter import CompositeElementSplitter
+
 from sec_parser.processing_engine.html_tag_parser import (
     AbstractHtmlTagParser,
     HtmlTagParser,
@@ -184,10 +186,11 @@ class Edgar10QParser(AbstractSemanticElementParser):
             IndividualSemanticElementExtractor(
                 get_checks=get_checks or self.get_default_single_element_checks,
             ),
+            CompositeElementSplitter(),
             ImageClassifier(types_to_process={NotYetClassifiedElement}),
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
-            TableTitleSplitter(),  # NEW - Add after TableClassifier
+            TableTitleSplitter(), 
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10Q(types_to_process={NotYetClassifiedElement}),
             IntroductorySectionElementClassifier(),
@@ -230,10 +233,11 @@ class Edgar10KParser(AbstractSemanticElementParser):
             IndividualSemanticElementExtractor(
                 get_checks=get_checks or self.get_default_single_element_checks,
             ),
+            CompositeElementSplitter(),
             ImageClassifier(types_to_process={NotYetClassifiedElement}),
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
-            TableTitleSplitter(),  # NEW - Add after TableClassifier
+            TableTitleSplitter(),
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10K(types_to_process={NotYetClassifiedElement}),
             IntroductorySectionElementClassifier(),
