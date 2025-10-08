@@ -186,7 +186,6 @@ class Edgar10QParser(AbstractSemanticElementParser):
             IndividualSemanticElementExtractor(
                 get_checks=get_checks or self.get_default_single_element_checks,
             ),
-            CompositeElementSplitter(),
             ImageClassifier(types_to_process={NotYetClassifiedElement}),
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
@@ -206,6 +205,7 @@ class Edgar10QParser(AbstractSemanticElementParser):
                 types_to_process={TextElement, HighlightedTextElement},
             ),
             TitleClassifier(types_to_process={HighlightedTextElement}),
+            CompositeElementSplitter(),
             TextElementMerger(),
         ]
 

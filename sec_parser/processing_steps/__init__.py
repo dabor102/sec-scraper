@@ -46,7 +46,6 @@ from sec_parser.processing_steps.table_classifier import TableClassifier
 from sec_parser.processing_steps.table_of_contents_classifier import (
     TableOfContentsClassifier,
 )
-#from sec_parser.processing_steps.table_title_extractor import TableTitleExtractor
 from sec_parser.processing_steps.table_title_splitter import TableTitleSplitter  
 from sec_parser.processing_steps.text_classifier import TextClassifier
 from sec_parser.processing_steps.text_element_merger import TextElementMerger
@@ -69,7 +68,6 @@ __all__ = [
     "PageNumberClassifier",
     "SupplementaryTextClassifier",
     "TableCheck",
-    #"TableTitleExtractor",
     "TableTitleSplitter",
     "CompositeElementSplitter",
     "TableClassifier",
