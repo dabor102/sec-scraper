@@ -2,6 +2,9 @@
 filing_style_analyzer.py - Analyze SEC filing styles using custom fetcher
 """
 
+from bs4 import XMLParsedAsHTMLWarning
+import warnings
+
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -14,6 +17,26 @@ from sec_parser.semantic_elements.title_element import TitleElement
 from sec_parser.semantic_elements.table_element.table_element import TableElement
 from sec_parser.semantic_elements.top_section_title import TopSectionTitle
 import pandas as pd
+from datetime import datetime
+
+
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
+import sys
+from loguru import logger
+
+# --- Loguru Configuration ---
+# 1. Remove the default handler to prevent duplicate outputs.
+logger.remove()
+
+# 2. Add a new handler to output TRACE level logs to the console.
+logger.add(
+    sink="debug.log",
+    level="TRACE",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    colorize=True,
+)
+# --- End of Loguru Configuration ---
 
 
 # SEC requires custom User-Agent
@@ -120,27 +143,11 @@ def download_filing_html(url: str) -> str:
         return None
 
 
-def analyze_filing(ticker: str, form_type: str = '10-Q'):
-    """
-    Complete workflow: fetch filing, analyze styles, and parse.
-    
-    Args:
-        ticker: Stock ticker symbol
-        form_type: '10-K' or '10-Q'
-    """
-    # Step 1: Get filing URL
-    filing_url, metadata = get_latest_filing_url(ticker, form_type)
-    if not filing_url:
-        return None, None, None
-    
-    # Step 2: Download HTML
-    html = download_filing_html(filing_url)
-    if not html:
-        return None, None, None
-    
+def run_analysis_on_html(html: str, metadata: dict, form_type: str):
+    """Core logic to analyze HTML content and print results."""
     print("\n" + "=" * 80)
-    print(f"ANALYZING {metadata['ticker']} {metadata['form_type']}")
-    print(f"Filed: {metadata['filing_date']} | Period: {metadata['report_date']}")
+    print(f"ANALYZING {metadata.get('ticker', 'URL')} {metadata.get('form_type', '')}")
+    print(f"Filed: {metadata.get('filing_date', 'N/A')} | Period: {metadata.get('report_date', 'N/A')}")
     print("=" * 80)
     
     # Step 3: Analyze styles
@@ -148,37 +155,57 @@ def analyze_filing(ticker: str, form_type: str = '10-Q'):
     print("-" * 80)
     analyzer = DocumentStyleAnalyzer()
     results = analyzer.analyze(html)
-    analyzer.print_summary(
-        top_n=10,
-        min_percentage=0.5,
-        show_combinations=True
-    )
+    
+    min_percentage = 0.5
+    filtered_combinations = [
+        stat for stat in results.style_combinations
+        if stat.percentage >= min_percentage
+    ]
+    
+    top_n = 20
+    top_combinations = sorted(
+        filtered_combinations, 
+        key=lambda x: x.percentage, 
+        reverse=True
+    )[:top_n]
+
+    if not top_combinations:
+        print("No style combinations found meeting the criteria.")
+    else:
+        print(f"Displaying Top {len(top_combinations)} Style Combinations (>={min_percentage}% Occurrence)\n")
+        for i, stat in enumerate(top_combinations, 1):
+            print(f"Combination #{i}:")
+            print(f"  Percentage: {stat.percentage:.2f}%")
+            print(f"  Occurrences: {stat.occurrence_count}")
+            print(f"  Avg text length: {stat.avg_text_length:.1f} chars")
+            print(f"  Styles:")
+            for key, value in sorted(stat.properties):
+                print(f"    {key}: {value}")
+            print("-" * 40)
     
     # Step 4: Parse with sec-parser
     print("\n\n📄 PARSING DOCUMENT")
     print("-" * 80)
     if form_type == '10-K':
         elements = Edgar10KParser().parse(html)
-    else:
+    else: # Default to 10-Q for URLs or other types
         elements = Edgar10QParser().parse(html)
     
     tree = TreeBuilder().build(elements)
     
     print(f"Parsed {len(elements)} elements")
     
-    # Count element types
     from collections import Counter
     element_types = Counter(type(e).__name__ for e in elements)
     print("\nElement type distribution:")
     for elem_type, count in element_types.most_common(10):
         print(f"  {elem_type}: {count}")
     
-    # Show titles found
     titles = [e for e in elements if isinstance(e, TitleElement)]
     print(f"\n✓ Found {len(titles)} title elements")
     if titles:
         print("\nFirst 5 titles:")
-        for i, title in enumerate(titles[:25], 1):
+        for i, title in enumerate(titles[:100], 1):
             print(f"  {i}. [{title.level}] {title.text[:80]}")
     
     # Step 5: Compare rare styles with detected titles
@@ -197,8 +224,52 @@ def analyze_filing(ticker: str, form_type: str = '10-Q'):
     for stat in rare_weights[:5]:
         print(f"  {stat.value}: {stat.percentage:.2f}% "
               f"({stat.occurrence_count} occurrences)")
+
+    # Step 6: Save semantic tree
+    if tree and metadata:
+        print("\n💾 Saving semantic tree to CSV...")
+        filename = save_semantic_tree_debug(
+            semantic_tree=tree,
+            ticker=metadata.get('ticker', 'URL_ANALYSIS'),
+            form_type=metadata.get('form_type', 'CUSTOM'),
+            filing_date=metadata.get('filing_date')
+        )
+        if filename:
+            print(f"✓ Successfully saved to: {filename}")
+        else:
+            print("✗ Failed to save the semantic tree.")
+
+
+def analyze_filing(ticker: str, form_type: str = '10-Q'):
+    """Workflow for analyzing a filing by ticker."""
+    filing_url, metadata = get_latest_filing_url(ticker, form_type)
+    if not filing_url:
+        return
     
-    return analyzer, elements, tree, metadata
+    html = download_filing_html(filing_url)
+    if not html:
+        return
+    
+    run_analysis_on_html(html, metadata, form_type)
+
+
+def analyze_url(url: str):
+    """Workflow for analyzing a filing by direct URL."""
+    html = download_filing_html(url)
+    if not html:
+        return
+
+    # Create dummy metadata for the analysis function
+    metadata = {
+        'ticker': 'URL_INPUT',
+        'form_type': 'custom',
+        'filing_date': datetime.now().strftime('%Y-%m-%d'),
+        'report_date': 'N/A',
+        'url': url
+    }
+    
+    # For URL analysis, we default to 10-Q parsing rules.
+    run_analysis_on_html(html, metadata, '10-Q')
 
 
 def normalize_text(text: str) -> str:
@@ -221,12 +292,10 @@ def save_semantic_tree_debug(semantic_tree: list, ticker: str, form_type: str,
     try:
         debug_records = []
         
-        # This recursive helper function will traverse the tree
         def traverse_and_add(node, level=0):
             if not hasattr(node, 'semantic_element'):
-                return # Skip nodes that aren't valid semantic elements
+                return
 
-            # 1. Create a record for the current node
             record = {
                 'Level': level,
                 'Element_Type': type(node.semantic_element).__name__,
@@ -236,19 +305,15 @@ def save_semantic_tree_debug(semantic_tree: list, ticker: str, form_type: str,
             }
             debug_records.append(record)
             
-            # 2. Recursively call this function for all children
             for child_node in node.children:
                 traverse_and_add(child_node, level + 1)
 
-        # Start the traversal for each top-level node in the tree
         for top_level_node in semantic_tree:
             traverse_and_add(top_level_node)
         
-        # Generate a descriptive filename
         date_part = filing_date.replace('-', '') if filing_date else "NODATE"
         filename = f"{ticker.upper()}_{form_type}_{date_part}_semantic_tree.csv"
         
-        # Save the flattened list of records to CSV
         df = pd.DataFrame(debug_records)
         df.to_csv(filename, index=False)
         
@@ -267,50 +332,45 @@ def main():
     
     while True:
         print("\n" + "-" * 80)
-        ticker = input("\nEnter stock ticker (or 'exit' to quit): ").strip()
+        user_input = input("\nEnter stock ticker, 'url' for a direct link, or 'exit' to quit: ").strip()
         
-        if ticker.lower() == 'exit':
+        if user_input.lower() == 'exit':
             print("Goodbye!")
             break
         
-        if not ticker:
-            print("Please enter a ticker.")
+        if not user_input:
+            print("Please enter a ticker or command.")
             continue
-        
-        form_type = input("Enter form type (10-Q or 10-K) [default: 10-Q]: ").strip().upper()
-        if not form_type:
-            form_type = '10-Q'
-        
-        if form_type not in ['10-K', '10-Q']:
-            print("Invalid form type. Using 10-Q.")
-            form_type = '10-Q'
-        
-        # Capture the results from the analysis
-        analyzer, elements, tree, metadata = analyze_filing(ticker, form_type)
-        
-        # If the analysis was successful, save the semantic tree
-        if tree and metadata:
-            print("\n💾 Saving semantic tree to CSV...")
-            filename = save_semantic_tree_debug(
-                semantic_tree=tree,
-                ticker=ticker,
-                form_type=form_type,
-                filing_date=metadata.get('filing_date')
-            )
-            if filename:
-                print(f"✓ Successfully saved to: {filename}")
+            
+        if user_input.lower() == 'url':
+            pasted_url = input("Paste the full URL of the SEC filing to analyze: ").strip()
+            if pasted_url:
+                try:
+                    analyze_url(pasted_url)
+                except Exception as e:
+                    print(f"\nAn unexpected error occurred during URL analysis: {e}")
             else:
-                print("✗ Failed to save the semantic tree.")
+                print("No URL provided.")
+            
+        else: # Assume it's a ticker
+            ticker = user_input
+            form_type = input("Enter form type (10-Q or 10-K) [default: 10-Q]: ").strip().upper()
+            if not form_type:
+                form_type = '10-Q'
+            
+            if form_type not in ['10-K', '10-Q']:
+                print("Invalid form type. Using 10-Q.")
+                form_type = '10-Q'
+            
+            try:
+                analyze_filing(ticker, form_type)
+            except (TypeError, AttributeError) as e:
+                print(f"\nCould not analyze {ticker}. The filing may not be available or the format is unusual.")
+                print(f"Error details: {e}")
+                print("Please try another ticker.")
         
         print("\n" + "=" * 80)
 
 
 if __name__ == "__main__":
-    # Option 1: Interactive mode
     main()
-    
-    # Option 2: Analyze specific ticker (uncomment to use)
-    # analyze_filing("AAPL", "10-Q")
-    
-    # Option 3: Compare multiple companies (uncomment to use)
-    # compare_multiple_filings(["AAPL", "MSFT", "GOOGL"], "10-Q")

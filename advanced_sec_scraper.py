@@ -512,9 +512,6 @@ def parse_header(header_rows: list[list[str]], metric_col: int,
     periods = _try_vertical_header(header_rows, metric_col, context, is_snapshot)
     return periods
 
-# ✅ Replace the existing _try_split_header function with this one
-
-# ✅ Replace the existing _try_split_header function with this one
 
 def _try_split_header(header_rows: list[list[str]], metric_col: int,
                      context: ScrapingContext, is_snapshot: bool) -> list[str]:
@@ -570,14 +567,14 @@ def _try_split_header(header_rows: list[list[str]], metric_col: int,
                         best_desc, best_desc_col = desc_text, desc_col
                 
                 if best_desc:
-                    # --- NEW LOGIC: Check for a 'month row' in between ---
+                    # --- Check for a 'month row' in between ---
                     # The month row is likely the one right before the year row.
                     month_text = ''
                     if year_row_idx > desc_row_idx + 1:
                         month_row = header_rows[year_row_idx - 1]
                         if year_col < len(month_row):
                             month_text = month_row[year_col].strip()
-                    # --- END OF NEW LOGIC ---
+                    
 
                     # Combine all three parts: description, month, and year.
                     combined_text = f"{best_desc} {month_text} {year_text}"
@@ -643,15 +640,29 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
     """
     Try broadcasting approach for layered headers.
     
-    FIXED: Handles cases where a single cell in one row (e.g., "December 31")
-    provides shared context for multiple columns in rows below it.
+    Now handles horizontal layouts by capturing and prepending 
+    shared descriptions from the metric column.
     """
-    logger.debug("Attempting broadcasting header format")
+    logger.debug("Attempting broadcasting header format (with metric col awareness)")
     
-    # Collect all meaningful cells with their column positions from data columns
+    # --- NEW: Capture shared descriptions from the metric column ---
+    shared_row_descriptions = []
+    for row in header_rows:
+        if len(row) > metric_col:
+            cell_text = normalize_text(row[metric_col])
+            # Only consider it a description if it contains relevant keywords
+            classifications = classify_cell_text(cell_text)
+            if 'DURATION' in classifications or 'DATE' in classifications:
+                shared_row_descriptions.append(cell_text)
+                logger.debug(f"Found shared row description: '{cell_text}'")
+    
+    master_description = normalize_text(' '.join(shared_row_descriptions))
+    # --- END NEW LOGIC ---
+
+    # Collect all meaningful cells from DATA columns (same as before)
     processed_rows = []
     for row_idx, row in enumerate(header_rows):
-        cells = row[metric_col + 1:]
+        cells = row[metric_col + 1:] # This part remains focused on data columns
         meaningful_cells = []
         
         for col_idx, cell in enumerate(cells):
@@ -659,7 +670,7 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
             if cell_text:
                 meaningful_cells.append({
                     'text': cell_text,
-                    'position': col_idx, # Position relative to start of data columns
+                    'position': col_idx,
                     'classifications': classify_cell_text(cell_text),
                     'row': row_idx
                 })
@@ -668,9 +679,9 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
             processed_rows.append(meaningful_cells)
     
     if not processed_rows:
+        # If there are no data columns but we found a description, it's not a valid header
         return []
 
-    # Find the row with the most items - likely the most specific period row
     base_row = max(processed_rows, key=len)
     num_periods = len(base_row)
     
@@ -679,55 +690,37 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
     
     logger.debug(f"Broadcasting: detected {num_periods} periods from base row {base_row[0]['row']}")
 
-    # Map each period index (0, 1, 2...) to its column position in the grid
     position_to_column = {i: cell['position'] for i, cell in enumerate(base_row)}
-    
-    # Initialize context for each period
     resolved_contexts = [{'duration': [], 'date': [], 'year': []} for _ in range(num_periods)]
 
-    # Broadcast information from ALL rows
+    # Broadcast information from ALL rows (same logic as before)
     for row_of_cells in processed_rows:
-        # *** NEW LOGIC ***
-        # If a row has only one cell, it's likely a shared description
-        # (like a centered "December 31" with colspan) that applies to all periods.
         is_shared_context_row = (len(row_of_cells) == 1 and num_periods > 1)
-
         for cell_info in row_of_cells:
             text = cell_info['text']
             classifications = cell_info['classifications']
-
             if is_shared_context_row:
-                # Broadcast this single cell's text to ALL period contexts
-                logger.debug(f"Broadcasting shared context '{text}' to all {num_periods} periods.")
                 for period_idx in range(num_periods):
                     if 'DURATION' in classifications: resolved_contexts[period_idx]['duration'].append(text)
                     if 'DATE' in classifications: resolved_contexts[period_idx]['date'].append(text)
                     if 'YEAR' in classifications: resolved_contexts[period_idx]['year'].append(text)
             else:
-                # Use original proximity logic for rows with multiple cells
                 col_pos = cell_info['position']
-                
-                # Find which period this cell belongs to based on column proximity
-                best_period_idx = min(
-                    range(num_periods),
-                    key=lambda i: abs(col_pos - position_to_column[i])
-                )
-                
-                # Add context if it's reasonably close (avoids mis-assigning outliers)
+                best_period_idx = min(range(num_periods), key=lambda i: abs(col_pos - position_to_column[i]))
                 if abs(col_pos - position_to_column[best_period_idx]) <= 2:
                     if 'DURATION' in classifications: resolved_contexts[best_period_idx]['duration'].append(text)
                     if 'DATE' in classifications: resolved_contexts[best_period_idx]['date'].append(text)
                     if 'YEAR' in classifications: resolved_contexts[best_period_idx]['year'].append(text)
 
-    # Reconstruct period strings
+    # Reconstruct period strings, now with the master description
     ordered_periods = []
     for idx, ctx in enumerate(resolved_contexts):
-        # Join unique text parts, preserving order
         duration_text = normalize_text(' '.join(dict.fromkeys(ctx['duration'])))
         date_text = normalize_text(' '.join(dict.fromkeys(ctx['date'])))
         year_text = normalize_text(' '.join(dict.fromkeys(ctx['year'])))
         
-        combined_text = f"{duration_text} {date_text} {year_text}".strip()
+        # --- NEW: Prepend the shared description from the metric column ---
+        combined_text = f"{master_description} {duration_text} {date_text} {year_text}".strip()
         
         period = parse_period(combined_text, context, is_snapshot)
         
@@ -737,7 +730,7 @@ def _try_broadcasting_header(header_rows: list[list[str]], metric_col: int,
 
     if ordered_periods and len(ordered_periods) >= num_periods:
         logger.info(f"Successfully parsed {len(ordered_periods)} periods via broadcasting")
-        return ordered_periods[:num_periods] # Trim any extras
+        return ordered_periods[:num_periods]
     
     return []
 
@@ -917,21 +910,20 @@ def build_grid_from_table(table: Tag) -> list[list[str]]:
             
             colspan = int(cell_tag.get('colspan', 1))
             rowspan = int(cell_tag.get('rowspan', 1))
-
-            # --- NEW LOGIC ---
+    
             # Pre-process the cell to remove any tags with "visibility:hidden".
             # This is a robust way to eliminate invisible spacing characters.
             for hidden_tag in cell_tag.find_all(
                 style=lambda s: s and 'visibility:hidden' in s.lower()
             ):
                 hidden_tag.decompose()
-            # --- END NEW LOGIC ---
 
             # Remove superscript tags (footnote markers)
             for sup_tag in cell_tag.find_all('sup'):
                 sup_tag.decompose()
             
-            cell_text = normalize_text(cell_tag.get_text(strip=True))
+            cell_text = normalize_text(cell_tag.get_text(separator=' ', strip=True))
+
             for i in range(rowspan):
                 for j in range(colspan):
                     while len(grid) <= r + i:
@@ -1848,19 +1840,6 @@ def _parse_periods_near_table(table: Tag, context: ScrapingContext,
     return _parse_periods_from_text_blob(combined_text, context, is_snapshot)
 
 
-def _find_text_between_elements(start_element: Tag, end_element: Tag) -> str:
-    """Extracts all text between start and end HTML elements."""
-    text_parts = []
-    for sibling in start_element.find_next_siblings():
-        if sibling is end_element:
-            break
-        if isinstance(sibling, NavigableString):
-            if sibling.strip():
-                text_parts.append(sibling.strip())
-        elif isinstance(sibling, Tag):
-            text_parts.append(sibling.get_text(" ", strip=True))
-    return normalize_text(" ".join(text_parts))
-
 def _parse_periods_from_text_blob(text: str, context: ScrapingContext, 
                                   is_snapshot: bool) -> list[str]:
     """
@@ -2019,7 +1998,7 @@ def run_scraping(ticker: str, form_type: str) -> list:
     )
 
     # Process filings (currently just the most recent one)
-    for filing_meta in filings[:1]:
+    for filing_meta in filings: #[:1]
         try:
             records = process_single_filing(filing_meta, context)
             all_data.extend(records)

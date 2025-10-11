@@ -46,6 +46,11 @@ from sec_parser.processing_steps.table_classifier import TableClassifier
 from sec_parser.processing_steps.table_of_contents_classifier import (
     TableOfContentsClassifier,
 )
+
+from sec_parser.processing_steps.individual_semantic_element_extractor.single_element_checks.div_with_highlighted_child_check import (
+    DivWithHighlightedChildCheck,
+)
+
 from sec_parser.processing_steps.table_title_splitter import TableTitleSplitter  
 from sec_parser.processing_steps.text_classifier import TextClassifier
 from sec_parser.processing_steps.text_element_merger import TextElementMerger
@@ -62,6 +67,7 @@ __all__ = [
     "HighlightedTextClassifier",
     "ImageCheck",
     "ImageClassifier",
+    "DivWithHighlightedChildCheck",
     "IndividualSemanticElementExtractor",
     "IntroductorySectionElementClassifier",
     "PageHeaderClassifier",
@@ -71,6 +77,7 @@ __all__ = [
     "TableTitleSplitter",
     "CompositeElementSplitter",
     "TableClassifier",
+    "TableTitleWrapperClassifier",
     "TableOfContentsClassifier",
     "TextClassifier",
     "TextElementMerger",

@@ -1,6 +1,6 @@
 import bs4
 from bs4 import NavigableString
-
+import re
 
 def has_text_outside_tags(node: bs4.PageElement, tag_names: tuple[str, ...]) -> bool:
     """
@@ -11,9 +11,12 @@ def has_text_outside_tags(node: bs4.PageElement, tag_names: tuple[str, ...]) -> 
     would return True, as there is text outside the 'b'
     tag within the descendants of the 'div' tag.
     """
-    if isinstance(node, NavigableString) and any(not c.isspace() for c in node):
-        return True
-    if isinstance(node, bs4.Tag):
+    if isinstance(node, NavigableString):
+        # Replace non-breaking spaces with regular spaces and then strip
+        # to correctly identify strings that only contain whitespace.
+        if str(node).replace('\xa0', ' ').strip():
+            return True
+    elif isinstance(node, bs4.Tag):
         if node.name in tag_names:
             return False
         for child in node.children:

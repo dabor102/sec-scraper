@@ -3,6 +3,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Callable
 
+from sec_parser.processing_steps.table_title_wrapper_classifier import (
+    TableTitleWrapperClassifier)
+
 from sec_parser.processing_steps.table_title_splitter import TableTitleSplitter 
 
 from sec_parser.processing_steps.composite_element_splitter import CompositeElementSplitter
@@ -61,6 +64,11 @@ from sec_parser.semantic_elements.semantic_elements import (
     TextElement,
 )
 from sec_parser.semantic_elements.table_element.table_element import TableElement
+
+from sec_parser.processing_steps.individual_semantic_element_extractor.single_element_checks.div_with_highlighted_child_check import (
+    DivWithHighlightedChildCheck,
+)
+
 
 if TYPE_CHECKING:  # pragma: no cover
     from sec_parser.processing_engine.html_tag import HtmlTag
@@ -189,7 +197,8 @@ class Edgar10QParser(AbstractSemanticElementParser):
             ImageClassifier(types_to_process={NotYetClassifiedElement}),
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
-            TableTitleSplitter(), 
+            TableTitleWrapperClassifier(types_to_process={TableElement}),
+            TableTitleSplitter(types_to_process={TableElement}), 
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10Q(types_to_process={NotYetClassifiedElement}),
             IntroductorySectionElementClassifier(),
@@ -205,8 +214,8 @@ class Edgar10QParser(AbstractSemanticElementParser):
                 types_to_process={TextElement, HighlightedTextElement},
             ),
             TitleClassifier(types_to_process={HighlightedTextElement}),
-            CompositeElementSplitter(),
             TextElementMerger(),
+            #CompositeElementSplitter()
         ]
 
     def get_default_single_element_checks(self) -> list[AbstractSingleElementCheck]:
@@ -215,6 +224,7 @@ class Edgar10QParser(AbstractSemanticElementParser):
             XbrlTagCheck(),
             ImageCheck(),
             TopSectionTitleCheck(),
+            DivWithHighlightedChildCheck(),
         ]
 
 class Edgar10KParser(AbstractSemanticElementParser):
@@ -237,7 +247,8 @@ class Edgar10KParser(AbstractSemanticElementParser):
             ImageClassifier(types_to_process={NotYetClassifiedElement}),
             EmptyElementClassifier(types_to_process={NotYetClassifiedElement}),
             TableClassifier(types_to_process={NotYetClassifiedElement}),
-            TableTitleSplitter(),
+            TableTitleWrapperClassifier(types_to_process={TableElement}),
+            TableTitleSplitter(types_to_process={TableElement}),
             TableOfContentsClassifier(types_to_process={TableElement}),
             TopSectionManagerFor10K(types_to_process={NotYetClassifiedElement}),
             IntroductorySectionElementClassifier(),
@@ -262,4 +273,5 @@ class Edgar10KParser(AbstractSemanticElementParser):
             XbrlTagCheck(),
             ImageCheck(),
             TopSectionTitleCheck(),
+            DivWithHighlightedChildCheck(),
         ]
