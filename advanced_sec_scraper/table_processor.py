@@ -149,6 +149,7 @@ class TableProcessor:
         if not grid:
             return [], 0
         
+        
         header_keywords = {'year', 'ended', 'month', 'quarter', 'period', 'fiscal'}
         
         month_names = {
@@ -156,7 +157,8 @@ class TableProcessor:
             'july', 'august', 'september', 'october', 'november', 'december',
             'jan', 'feb', 'mar', 'apr', 'may', 'jun', 
             'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
-        }
+        } 
+        
         
         # Title indicators
         title_indicators = [
@@ -189,11 +191,14 @@ class TableProcessor:
             # Empty metric cell is part of header
             if not metric_text:
                 continue
+
+            if len(metric_text_lower)<75:
             
-            # Check if this looks like a title row
-            if any(indicator in metric_text_lower for indicator in title_indicators):
-                logger.debug(f"Row {row_idx} appears to be title: '{metric_text}'")
-                continue
+                # Check if this looks like a title row
+                if any(indicator in metric_text_lower for indicator in title_indicators):
+                    print(f"Row {row_idx} appears to be title: '{metric_text}'")
+                    continue
+            
             
             # Date/period keywords indicate header
             if any(keyword in metric_text_lower for keyword in header_keywords):
@@ -234,6 +239,7 @@ class TableProcessor:
             
             # This row has text but no header indicators - it's the body start
             logger.info(f"Body starts at row {row_idx}: '{metric_text}'")
+
             return grid[:row_idx], row_idx
         
         logger.warning("Could not determine header/body split. Defaulting to row 0.")

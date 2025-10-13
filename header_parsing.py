@@ -27,60 +27,81 @@ def normalize_text(text: str) -> str:
 def is_header_row(text: str, context: ElementProcessingContext) -> bool:
     """
     Determines if a text string is a table header by checking for common
-    financial date-related phrases, units, or parseable dates.
+    financial date-related phrases.
     """
     normalized_text = normalize_text(text).lower()
-    logger.info(normalized_text)
+    print(normalized_text)
 
-    if len(normalized_text)>250:
-        logger.info("Long text -> NOT TITLE")
-        return True
+    # Title indicators
+    title_indicators = [
+            'consolidated statement',
+            'balance sheet',
+            'statement of income',
+            'statement of operations',
+            'cash flow',
+            'comprehensive income',
+            'stockholders equity',
+            'shareholders equity']
+
+    units_pattern = re.compile(
+        #  # This now checks for EITHER a literal dollar sign
+        #  # OR one of the specified whole words.
+        r"(\$|\b(000|thousands|millions|billions|unaudited|per share)\b)"
+        )
+    
+        #Check if it is financial title
+    if any(indicator in normalized_text for indicator in title_indicators):
+             
+             if re.search(r'\b(19|20)\d{2}\b', normalized_text):
+                return True
+             
+             if len(normalized_text)<75:
+                if units_pattern.search(normalized_text):
+                    return True
+                 
+                return False
+
+    return True
+
+    
 
     # Rule 1: Check for common financial reporting period phrases
-    asof_pattern = re.compile(r"\b(as of)\b")
-    period_pattern = re.compile(
-    r"\b((first|second|third|fourth)\s+)?(three|six|nine|twelve)\s+(months|month)(\s+ended)?\b"
-    r"|\b((first|second|third|fourth)\s+)?quarter\b",
-    re.IGNORECASE  # Use IGNORECASE for case-insensitivity
-)
-    fiscal_year_pattern = re.compile(r"\bfiscal\s+year\s+ended\b")
+    #asof_pattern = re.compile(r"\b(as of)\b")
+    #period_pattern = re.compile(
+    #r"\b((first|second|third|fourth)\s+)?(three|six|nine|twelve)\s+(months|month)(\s+ended)?\b"
+    #r"|\b((first|second|third|fourth)\s+)?quarter\b",
+    #re.IGNORECASE  # Use IGNORECASE for case-insensitivity
+#)
+#    fiscal_year_pattern = re.compile(r"\bfiscal\s+year\s+ended\b")
+#    
+#    if (
+#        asof_pattern.search(normalized_text) or
+#        period_pattern.search(normalized_text) or
+ ##       fiscal_year_pattern.search(normalized_text)
+ #   ):
+ #       logger.info("period match-> NO TITLE")
+ #       return True
     
-    if (
-        asof_pattern.search(normalized_text) or
-        period_pattern.search(normalized_text) or
-        fiscal_year_pattern.search(normalized_text)
-    ):
-        logger.info("period match-> NO TITLE")
-        return True
-    
-    # Rule 1.5: Check for unit declarations or qualifiers
-    units_pattern = re.compile(
-    # This now checks for EITHER a literal dollar sign
-    # OR one of the specified whole words.
-    r"(\$|\b(thousands|millions|billions|unaudited|per share)\b)"
-)
-    if units_pattern.search(normalized_text):
-        logger.info("units match-> NO TITLE")
-        return True 
-
-    
-    # Rule 2: Check for standalone four-digit years
-    if re.search(r'\b(19|20)\d{2}\b', normalized_text):
-        logger.info("YEAR -> NO TITLE")
-        return True
-
-    # Rule 3: Use the dateutil library to robustly check for dates
-    words = normalized_text.split()
-    for i in range(len(words)):
-        for j in range(i + 1, len(words) + 1):
-            substring = " ".join(words[i:j])
-            try:
-                parse_date(substring)
-                logger.info("DATE PARSED")
-                return True
-            except (ParserError, ValueError, OverflowError, TypeError):
-                pass
-    
-
-    logger.info("TITLE FOUND")
-    return False
+ #   # Rule 1.5: Check for unit declarations or qualifiers
+  #  
+#    
+#
+#    
+#    # Rule 2: Check for standalone four-digit years
+#    
+#
+#    # Rule 3: Use the dateutil library to robustly check for dates
+#    words = normalized_text.split()
+#    for i in range(len(words)):
+#        for j in range(i + 1, len(words) + 1):
+#            substring = " ".join(words[i:j])
+#            try:
+#                parse_date(substring)
+#                logger.info("DATE PARSED")
+ #               return True
+#            except (ParserError, ValueError, OverflowError, TypeError):
+#                pass
+#    
+#
+#    logger.info("TITLE FOUND")
+#    return False

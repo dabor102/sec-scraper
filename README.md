@@ -109,6 +109,72 @@ A collection of helper functions that support the entire process.
 * **`save_semantic_tree_debug()`**: Called on failure, this function saves the semantic tree to a CSV file to help diagnose why a document could not be processed.
 * **`parse_period()`, `correct_fiscal_periods()`, `normalize_text()`**: A suite of helper functions for cleaning text, interpreting dates, and standardizing period labels.
 
+
+
+### 6. process flow
+SEC Parser Processing Pipeline
+The sec-parser library processes SEC EDGAR HTML documents by passing them through a pipeline of steps. Each step is responsible for a specific task, such as classifying elements, splitting them, or merging them. The pipeline is designed to be modular and customizable, allowing developers to add, remove, or replace steps as needed.
+
+
+graph TD
+    A[HTML Document] --> B{HtmlTagParser};
+    B --> C[List of NotYetClassifiedElement];
+    C --> D{IndividualSemanticElementExtractor};
+    D --> E{ImageClassifier};
+    E --> F{EmptyElementClassifier};
+    F --> G{TableClassifier};
+    G --> H{TableTitleSplitter};
+    H --> I{TableOfContentsClassifier};
+    I --> J{TopSectionManagerFor10Q};
+    J --> K{IntroductorySectionElementClassifier};
+    K --> L{TextClassifier};
+    L --> M{HighlightedTextClassifier};
+    M --> N{SupplementaryTextClassifier};
+    N --> O{PageHeaderClassifier};
+    O --> P{PageNumberClassifier};
+    P --> Q{TitleClassifier};
+    Q --> R{TextElementMerger};
+    R --> S[List of Semantic Elements];
+Processing Steps Explained
+
+Here is a breakdown of what happens at each stage of the pipeline:
+
+HtmlTagParser: The process begins with the HtmlTagParser class, which takes a raw HTML document as input. It uses the BeautifulSoup4 library to parse the HTML and create a list of HtmlTag objects. These objects are wrappers around BeautifulSoup's Tag objects and serve as the initial representation of the document's elements.
+
+IndividualSemanticElementExtractor: This step is responsible for splitting a single HTML element that represents multiple semantic elements into multiple SemanticElement instances. This is crucial for maintaining the structural integrity of the document during parsing.
+
+ImageClassifier: The ImageClassifier identifies elements that contain <img> tags and converts them into ImageElement instances. This step helps in distinguishing image content from other types of content in the document.
+
+EmptyElementClassifier: This step scans for elements that do not contain any words and classifies them as EmptyElement instances. This is useful for filtering out irrelevant elements that are often used for spacing or formatting purposes.
+
+TableClassifier: The TableClassifier identifies <table> elements and converts them into TableElement instances. It also applies a threshold to filter out tables that are too small to be considered meaningful data tables.
+
+TableTitleSplitter: This step extracts title-like rows from within table elements. It is designed to handle cases where titles are embedded within tables, a common practice in SEC filings.
+
+TableOfContentsClassifier: The TableOfContentsClassifier identifies tables that serve as a table of contents and converts them into TableOfContentsElement instances. This helps in distinguishing ToC tables from data tables.
+
+TopSectionManagerFor10Q: This step is responsible for identifying the top-level sections of a 10-Q report, such as "Part I, Item 1. Financial Statements". It uses regular expressions to match section titles and then classifies the corresponding elements as TopSectionTitle instances.
+
+IntroductorySectionElementClassifier: The IntroductorySectionElementClassifier is designed to classify elements that are located before the actual contents of the document. For a 10-Q report, this step will mark all elements that appear before the 'part1' section.
+
+TextClassifier: This step classifies any remaining NotYetClassifiedElement instances that contain words as TextElement instances. This is a general-purpose step that ensures all remaining text content is properly classified.
+
+HighlightedTextClassifier: The HighlightedTextClassifier identifies text elements with specific styling, such as bold or italic text, and converts them into HighlightedTextElement instances. This is an intermediate step in identifying title elements.
+
+SupplementaryTextClassifier: This step is responsible for identifying and classifying supplementary text within a document, such as unit qualifiers, additional notes, and disclaimers. It looks for specific patterns, such as text enclosed in parentheses, to identify these elements.
+
+PageHeaderClassifier: The PageHeaderClassifier identifies and classifies page headers within the document. It looks for common patterns in page headers, such as repeating text, to distinguish them from other content.
+
+PageNumberClassifier: This step identifies and classifies page numbers within the document. It uses a combination of pattern matching and frequency analysis to identify page numbers accurately.
+
+TitleClassifier: The TitleClassifier converts HighlightedTextElement instances into TitleElement instances. It uses the order of appearance of unique styles to determine the hierarchical level of each title.
+
+TextElementMerger: This final step merges adjacent TextElement instances into a single element. This is intended to fix formatting artifacts where a single sentence is split across multiple HTML tags.
+
+After passing through all these steps, the final output is a list of semantic elements that accurately represent the structure and content of the original SEC filing.
+
+
+
 ## 🚀 Installation
 
 1.  **Clone the repository:**
@@ -168,7 +234,7 @@ The output is a CSV file named `{TICKER}_financials_{YYYYMMDD}.csv`. The columns
 | Column                 | Description                                                                 |
 | ---------------------- | --------------------------------------------------------------------------- |
 | `Filing Date`          | The date the report was filed with the SEC.                                 |
-| `Report Period End Date` | The end date of the financial period covered by the report.                 |
+| `Report Period End Date` | The end date of the financial period covered by the report.               |
 | `URL`                  | The direct URL to the SEC filing document.                                  |
 | `Financial Section`    | The name of the financial statement (e.g., `Balance Sheet`).                |
 | `Section`              | The subsection within the statement (e.g., `Current Assets`).               |

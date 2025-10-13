@@ -6,7 +6,7 @@ import sys
 import argparse
 from datetime import datetime
 from pathlib import Path
-from advanced_sec_scraper import (
+from advanced_sec_scraper_old import (
     get_filing_urls, 
     run_scraping, 
     generate_fiscal_calendar,

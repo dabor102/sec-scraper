@@ -181,82 +181,6 @@ class StatementFinder:
         
         return best['index'], best['node']
     
-    def find_statement_titles(
-        self,
-        tree: list,
-        keywords: StatementKeywords
-    ) -> List[Dict]:
-        """
-        Find TitleElements matching statement keywords.
-        
-        Args:
-            tree: Semantic tree nodes
-            keywords: StatementKeywords object with must_have/nice_to_have/penalties
-            
-        Returns:
-            List of dicts with 'text' and 'node' keys
-        """
-        matching_titles = []
-        
-        logger.debug(f"Searching for must-have keywords: {keywords.must_have}")
-        logger.debug(f"Nice-to-have keywords: {keywords.nice_to_have}")
-        
-        for node in tree:
-            if isinstance(node.semantic_element, TitleElement):
-                title_text = normalize_text(node.text)
-                title_lower = title_text.lower()
-                
-                # Must have at least one required keyword
-                has_required = any(kw in title_lower for kw in keywords.must_have)
-                if not has_required:
-                    continue
-                
-                has_nice_to_have = any(kw in title_lower for kw in keywords.nice_to_have)
-                
-                if has_required or has_nice_to_have:
-                    logger.info(f"Found matching title: '{title_text}'")
-                    matching_titles.append({
-                        'text': title_text,
-                        'node': node
-                    })
-        
-        return matching_titles
-    
-    def score_title(self, title_text: str, keywords: StatementKeywords) -> int:
-        """
-        Score title based on keyword matching.
-        
-        Args:
-            title_text: Title text to score
-            keywords: StatementKeywords with must_have/nice_to_have/penalties
-            
-        Returns:
-            Score (higher is better)
-        """
-        text = title_text.lower()
-        score = 0
-        
-        # Must-have keywords
-        must_have_matches = sum(1 for kw in keywords.must_have if kw in text)
-        score += must_have_matches * 100
-        
-        # Nice-to-have keywords
-        nice_to_have_matches = sum(1 for kw in keywords.nice_to_have if kw in text)
-        score += nice_to_have_matches * 10
-        
-        # Penalties
-        penalty_matches = sum(1 for kw in keywords.penalties if kw in text)
-        score -= penalty_matches * 30
-        
-        # Penalize numbered items (likely notes)
-        if re.match(r'^\s*\d{1,2}\s*[\.\)]', text):
-            score -= 50
-        
-        # Slight penalty for very long titles
-        score -= len(text) // 20
-        
-        return score
-    
     def find_statement_table(
         self,
         semantic_tree: list,
@@ -343,21 +267,222 @@ class StatementFinder:
         
         logger.error(f"Could not find table for {section_name}")
         return None
+
+    def find_statement_titles(
+        self,
+        tree: list,
+        keywords: StatementKeywords
+    ) -> List[Dict]:
+        """
+        Find TitleElements matching statement keywords.
+        
+        Args:
+            tree: Semantic tree nodes
+            keywords: StatementKeywords object with must_have/nice_to_have/penalties
+            
+        Returns:
+            List of dicts with 'text' and 'node' keys
+        """
+        matching_titles = []
+        
+        logger.debug(f"Searching for must-have keywords: {keywords.must_have}")
+        logger.debug(f"Nice-to-have keywords: {keywords.nice_to_have}")
+        
+        for node in tree:
+            if isinstance(node.semantic_element, TitleElement):
+                title_text = normalize_text(node.text)
+                title_lower = title_text.lower()
+                
+                # Must have at least one required keyword
+                has_required = any(kw in title_lower for kw in keywords.must_have)
+                if not has_required:
+                    continue
+                
+                has_nice_to_have = any(kw in title_lower for kw in keywords.nice_to_have)
+                
+                if has_required or has_nice_to_have:
+                    logger.info(f"Found matching title: '{title_text}'")
+                    matching_titles.append({
+                        'text': title_text,
+                        'node': node
+                    })
+        
+        return matching_titles
     
+    def find_statement_titles_in_elements(
+        self,
+        elements: list,
+        keywords: StatementKeywords
+    ) -> List[Dict]:
+        """Find TitleElements matching statement keywords in a flat list."""
+        from sec_parser.semantic_elements.title_element import TitleElement
+        
+        matching_titles = []
+        
+        for element in elements:
+            if isinstance(element, TitleElement):
+                title_text = normalize_text(element.text)
+                title_lower = title_text.lower()
+                
+                # Must have at least one required keyword
+                has_required = any(kw in title_lower for kw in keywords.must_have)
+                if not has_required:
+                    continue
+                
+                logger.info(f"Found matching title: '{title_text}'")
+                matching_titles.append({
+                    'text': title_text,
+                    'element': element
+                })
+        
+        return matching_titles
+
+
+
+    def score_title(self, title_text: str, keywords: StatementKeywords) -> int:
+        """
+        Score title based on keyword matching.
+        
+        Args:
+            title_text: Title text to score
+            keywords: StatementKeywords with must_have/nice_to_have/penalties
+            
+        Returns:
+            Score (higher is better)
+        """
+        text = title_text.lower()
+        score = 0
+        
+        # Must-have keywords
+        must_have_matches = sum(1 for kw in keywords.must_have if kw in text)
+        score += must_have_matches * 100
+        
+        # Nice-to-have keywords
+        nice_to_have_matches = sum(1 for kw in keywords.nice_to_have if kw in text)
+        score += nice_to_have_matches * 10
+        
+        # Penalties
+        penalty_matches = sum(1 for kw in keywords.penalties if kw in text)
+        score -= penalty_matches * 30
+        
+        # Penalize numbered items (likely notes)
+        if re.match(r'^\s*\d{1,2}\s*[\.\)]', text):
+            score -= 50
+        
+        # Slight penalty for very long titles
+        score -= len(text) // 20
+        
+        return score
+    
+    def _find_element_in_soup(
+        self, 
+        soup: BeautifulSoup, 
+        title_element_html_tag,
+        target_text: str
+    ) -> Optional[Tag]:
+        """
+        Find the actual title element in the full document by extracting
+        the innermost content element and searching by its unique attributes.
+        
+        When TableTitleSplitter runs, it wraps title rows in new table structures.
+        We need to find the actual content element (usually a <span>) inside.
+        
+        Args:
+            soup: Full document BeautifulSoup
+            title_element_html_tag: The HtmlTag object from sec-parser
+            target_text: The text content
+            
+        Returns:
+            Tag element or None
+        """
+        # Get the HTML source
+        title_html = title_element_html_tag.get_source_code()
+        
+        # Parse it to extract attributes
+        temp_soup = BeautifulSoup(title_html, 'html.parser')
+        
+        # The structure might be: <table><tr><td><span>Title</span></td></tr></table>
+        # We need to find the innermost element that contains the actual text
+        
+        # Find the deepest element that contains the full text
+        innermost_element = None
+        normalized_target_text = normalize_text(target_text)
+        
+        for element in temp_soup.find_all():
+            element_text = normalize_text(element.get_text("", strip=True))
+            if element_text == normalized_target_text:
+                # Check if this element has no children with text, or only has the text directly
+                if not any(child for child in element.find_all() 
+                        if normalize_text(child.get_text("", strip=True)) == normalized_target_text):
+                    innermost_element = element
+                    break
+        
+        if not innermost_element:
+            logger.warning("Could not find innermost element in title HTML")
+            return None
+        
+        # Now we have the innermost element (e.g., the <span>)
+        # Search for it in the full document by matching attributes
+        tag_name = innermost_element.name
+        
+        # Build a set of attributes to match
+        attrs_to_match = {}
+        if innermost_element.get('style'):
+            attrs_to_match['style'] = innermost_element.get('style')
+        if innermost_element.get('class'):
+            attrs_to_match['class'] = innermost_element.get('class')
+        
+        logger.debug(f"Searching for <{tag_name}> with attributes: {attrs_to_match}")
+        
+        # Search for matching elements in the full document
+        candidates = []
+        
+        for element in soup.find_all(tag_name):
+            # Check if attributes match
+            attrs_match = True
+            
+            if 'style' in attrs_to_match:
+                if element.get('style') != attrs_to_match['style']:
+                    attrs_match = False
+            
+            if 'class' in attrs_to_match:
+                if element.get('class') != attrs_to_match['class']:
+                    attrs_match = False
+            
+            if not attrs_match:
+                continue
+            
+            # Check if text matches
+            element_text = normalize_text(element.get_text("", strip=True))
+            if element_text == normalized_target_text:
+                candidates.append(element)
+        
+        if not candidates:
+            logger.warning(f"Could not find any <{tag_name}> elements matching attributes and text")
+            return None
+        
+        if len(candidates) > 1:
+            logger.warning(f"Found {len(candidates)} matching elements - using the first one")
+            # Prefer elements NOT inside tables (for Strategy 3)
+            # But allow elements inside tables (for Strategy 2)
+            for candidate in candidates:
+                if not candidate.find_parent('table'):
+                    logger.debug("Selected candidate outside of table")
+                    return candidate
+            
+            logger.debug("All candidates are inside tables - using first")
+        
+        logger.debug(f"Found matching element: <{candidates[0].name}>")
+        return candidates[0]
+
+
     def _extract_table_from_semantic_node(
         self, 
         title_node,
         full_soup: Optional[BeautifulSoup] = None
     ) -> Optional[Tuple[Tag, Dict]]:
         """
-        Extract table directly using semantic tree references.
-        
-        Args:
-            title_node: Semantic tree node for the title
-            full_soup: Full document BeautifulSoup (for Strategy 3)
-        
-        Returns:
-            (bs4_table, metadata) or None
+        Extract table using the title element's attributes to locate it in the document.
         """
         metadata = {
             'source': None,
@@ -391,11 +516,9 @@ class StatementFinder:
                 logger.debug(f"  Sibling #{siblings_found}: {sibling_type}")
                 
                 if isinstance(sibling_node.semantic_element, TableElement):
-                    # Get table HTML
                     table_html = sibling_node.semantic_element.html_tag.get_source_code()
                     table_bs4 = BeautifulSoup(table_html, 'html.parser').find('table')
                     
-                    # For metadata, we need title_bs4 from Strategy 1
                     title_html = title_element.html_tag.get_source_code()
                     title_bs4 = BeautifulSoup(title_html, 'html.parser').find()
                     metadata['title_bs4'] = title_bs4
@@ -412,27 +535,23 @@ class StatementFinder:
             
             logger.debug(f"❌ Strategy 1 failed: No suitable TableElement among {siblings_found} siblings")
         
-        # Strategy 2: Check if title itself is inside a table
-        logger.debug("\n--- Strategy 2: Title inside table ---")
+        # For Strategy 2 and 3, find the title in the full document
+        if not full_soup:
+            logger.error("❌ Cannot use Strategy 2/3: No full_soup provided!")
+            return None
         
-        # Get title as bs4 for Strategy 2
-        title_html = title_element.html_tag.get_source_code()
-        title_bs4_isolated = BeautifulSoup(title_html, 'html.parser').find()
+        # Find the title element by its HTML attributes
+        title_bs4 = self._find_element_in_soup(full_soup, title_element.html_tag, title_text)
         
-        # IMPORTANT: For Strategy 2, we need to find the title in the FULL soup
-        # because parent_table lookup won't work on isolated element
-        if full_soup:
-            # Find title in full soup by text matching
-            title_bs4 = self._find_element_in_soup(full_soup, title_text)
-            if not title_bs4:
-                logger.debug("❌ Could not locate title in full document soup")
-                title_bs4 = title_bs4_isolated  # Fallback to isolated
-        else:
-            logger.debug("⚠️  No full_soup provided, using isolated title element")
-            title_bs4 = title_bs4_isolated
+        if not title_bs4:
+            logger.error("❌ Could not locate title in full document!")
+            return None
         
         metadata['title_bs4'] = title_bs4
-        logger.debug(f"Title HTML tag: <{title_bs4.name}>")
+        logger.debug(f"✓ Found title in full document: <{title_bs4.name}>")
+        
+        # Strategy 2: Check if title is inside a table
+        logger.debug("\n--- Strategy 2: Title inside table ---")
         
         parent_table = title_bs4.find_parent('table')
         
@@ -461,92 +580,23 @@ class StatementFinder:
         
         # Strategy 3: Look for next table after title
         logger.debug("\n--- Strategy 3: Next table after title ---")
-        logger.info("Looking for next table after title element")
         
-        # For Strategy 3, we MUST have title in full soup context
-        if not full_soup:
-            logger.error("❌ Cannot use Strategy 3: No full_soup provided!")
-            logger.error("❌❌ ALL STRATEGIES FAILED: Could not find table for title")
-            logger.error("=== END TABLE EXTRACTION ===\n")
-            return None
-        
-        # Find title element in full soup
-        title_bs4_in_context = self._find_element_in_soup(full_soup, title_text)
-        
-        if not title_bs4_in_context:
-            logger.error("❌ Could not locate title in full document soup!")
-            logger.error("This means the title text doesn't appear in the document HTML,")
-            logger.error("which suggests sec-parser modified or extracted it.")
-            html_context = dump_html_context(title_bs4, context_lines=5)
-            logger.debug(html_context)
-            return None
-        
-        logger.debug(f"✓ Found title in full document at <{title_bs4_in_context.name}>")
-        
-        next_table = self._find_next_table(title_bs4_in_context)
+        next_table = self._find_next_table(title_bs4)
         
         if next_table:
             logger.info("✓✓ STRATEGY 3 SUCCESS: Found next table after title")
             metadata['source'] = 'next_table'
             return next_table, metadata
         
-        # ALL STRATEGIES FAILED - dump diagnostic info
-        logger.error("❌❌ ALL STRATEGIES FAILED: Could not find table for title")
+        logger.error("❌❌ ALL STRATEGIES FAILED")
         logger.error("=== END TABLE EXTRACTION ===\n")
         
-        # Dump HTML context for debugging
-        html_context = dump_html_context(title_bs4_in_context, context_lines=5)
+        html_context = dump_html_context(title_bs4, context_lines=5)
         logger.debug(html_context)
         
         return None
-    
-    def _find_element_in_soup(
-        self, 
-        soup: BeautifulSoup, 
-        target_text: str
-    ) -> Optional[Tag]:
-        """
-        Find element in soup by text content.
-        
-        This is critical for Strategy 2 and 3 to work, because we need
-        to find the title element in the FULL document soup, not the
-        isolated HTML from get_source_code().
-        
-        Args:
-            soup: Full document BeautifulSoup
-            target_text: Text to search for
-            
-        Returns:
-            Tag element or None
-        """
-        normalized_target = normalize_text(target_text)
-        spaceless_target = normalized_target.replace(" ", "")
-        
-        if not spaceless_target:
-            return None
-        
-        # Try to find exact text match
-        for element in soup.find_all(['div', 'span', 'p', 'td', 'th', 'b', 'strong', 'i', 'em']):
-            # Skip elements inside tables (we want the title BEFORE the table)
-            if element.find_parent('table'):
-                continue
-            
-            element_text = normalize_text(element.get_text("", strip=True))
-            spaceless_element_text = element_text.replace(" ", "")
-            
-            # Exact match
-            if spaceless_element_text == spaceless_target:
-                logger.debug(f"Found exact text match in <{element.name}> tag")
-                return element
-            
-            # Starts with match (title might be truncated)
-            if spaceless_element_text.startswith(spaceless_target) and len(spaceless_element_text) < len(spaceless_target) * 1.5:
-                logger.debug(f"Found 'starts with' match in <{element.name}> tag")
-                return element
-        
-        logger.warning(f"Could not find element with text: '{target_text[:50]}...'")
-        return None
-    
+
+
     def _find_next_table(self, element: Tag) -> Optional[Tag]:
         """Find next data table after given element."""
         if not element:

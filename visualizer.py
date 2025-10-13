@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 # Load your CSV
-df = pd.read_csv("TSLA_financials_20251001.csv")
+df = pd.read_csv("LNG_financials_20251011.csv")
 
 # Ensure numeric values
 df["Value"] = pd.to_numeric(df["Value"], errors="coerce")

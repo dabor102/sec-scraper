@@ -97,7 +97,7 @@ class TableTitleSplitter(AbstractElementwiseProcessingStep):
         table_rows_indices: list[int],
         source_element: AbstractSemanticElement,
     ) -> CompositeSemanticElement:
-        logger.debug(f"Splitting table. Title indices: {title_row_indices}, Table indices: {table_rows_indices}")
+        print(f"Splitting table. Title indices: {title_row_indices}, Table indices: {table_rows_indices}")
         new_elements: list[AbstractSemanticElement] = []
         soup = bs4.BeautifulSoup("", "lxml")
 

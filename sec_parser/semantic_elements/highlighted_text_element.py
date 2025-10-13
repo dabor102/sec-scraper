@@ -85,6 +85,7 @@ class TextStyle:
     italic: bool = False
     centered: bool = False
     underline: bool = False
+    has_color: bool = False
 
     def __bool__(self) -> bool:
         return any(asdict(self).values())
@@ -94,6 +95,7 @@ class TextStyle:
         cls,
         style_percentage: dict[tuple[str, str], float],
         text: str,
+        dominant_colors: set[str] | None = None,
     ) -> TextStyle:
         # Text checks
         is_all_uppercase = exceeds_capitalization_threshold(
@@ -122,6 +124,9 @@ class TextStyle:
             for style, check in style_checks.items()
         }
 
+        # Check for non-dominant color
+        has_color = cls._has_non_dominant_color(filtered_styles, dominant_colors)
+
         # Return a TextStyle instance with the results
         return cls(
             is_all_uppercase=is_all_uppercase,
@@ -129,6 +134,7 @@ class TextStyle:
             italic=style_results["italic"],
             centered=style_results["centered"],
             underline=style_results["underline"],
+            has_color=has_color,
         )
 
     @classmethod
@@ -141,3 +147,33 @@ class TextStyle:
             return int(value) >= cls.BOLD_THRESHOLD
         except ValueError:
             return False
+
+    @classmethod
+    def _has_non_dominant_color(
+        cls,
+        filtered_styles: dict[tuple[str, str], float],
+        dominant_colors: set[str] | None,
+    ) -> bool:
+        """
+        Check if the element has a color different from the dominant colors.
+        
+        Args:
+            filtered_styles: Styles that meet the percentage threshold
+            dominant_colors: Set of dominant colors in the document (e.g., {'#000000', '#262626'})
+        
+        Returns:
+            True if element has a non-dominant color, False otherwise
+        """
+        if not dominant_colors:
+            return False
+        
+        # Normalize dominant colors for comparison
+        normalized_dominant = {color.lower().strip() for color in dominant_colors}
+        
+        for (key, value), _ in filtered_styles.items():
+            if key == "color":
+                element_color = value.lower().strip()
+                if element_color not in normalized_dominant:
+                    return True
+        
+        return False
